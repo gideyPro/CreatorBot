@@ -38,8 +38,23 @@ export async function handleUpdate(update: any, env: Env) {
                     await sendTelegramMessage(chat_id, "Unknown command. Try `/generate <your topic>`, `/stats`, or `/start`.", env);
                     break;
             }
+        } else {
+            await handleMessage(chat_id, text, env);
         }
     }
+}
+
+async function handleMessage(chat_id: number, text: string, env: Env) {
+    const userState = await env.KV_B.get(`user_state_${chat_id}`);
+    if (userState === 'awaiting_topic') {
+        await handleGenerate(chat_id, text, env);
+        await env.KV_B.delete(`user_state_${chat_id}`);
+    }
+}
+
+async function handleGenerateArticle(chat_id: number, env: Env) {
+    await env.KV_B.put(`user_state_${chat_id}`, 'awaiting_topic');
+    await sendTelegramMessage(chat_id, 'Please enter the topic for the article:', env);
 }
 
 async function handleGenerate(chat_id: number, prompt: string, env: Env) {
@@ -92,6 +107,10 @@ async function handleStats(chat_id: number, env: Env) {
 }
 
 async function handleStart(chat_id: number, env: Env) {
+    await sendDashboard(chat_id, env);
+}
+
+async function sendDashboard(chat_id: number, env: Env) {
     const welcomeMessage = `
 Welcome to the Creator Bot! 🚀
 
@@ -104,9 +123,13 @@ Here are the commands you can use:
 
 Let's create something amazing together! ✨
     `;
-    if (!await sendTelegramMessage(chat_id, welcomeMessage, env)) {
-        console.error('Failed to send welcome message.');
-    }
+    const keyboard = [
+        [{ text: '📝 Generate Article', callback_data: 'generate_article' }],
+        [{ text: '📺 Channel Management', callback_data: 'channel_management' }],
+        [{ text: '⚙️ Settings', callback_data: 'settings' }],
+        [{ text: '📊 Statistics', callback_data: 'stats' }]
+    ];
+    await sendInlineKeyboardMessage(chat_id, welcomeMessage, keyboard, env);
 }
 
 async function handleSettings(chat_id: number, env: Env) {
@@ -133,6 +156,12 @@ async function handleCallbackQuery(callbackQuery: any, env: Env) {
         await sendTelegramMessage(chat_id, 'Please use the `/addchannel <@channel_id>` command to add a new channel.', env);
     } else if (data === 'set_active_channel') {
         await handleSetActiveChannel(chat_id, env);
+    } else if (data === 'generate_article') {
+        await handleGenerateArticle(chat_id, env);
+    } else if (data === 'settings') {
+        await handleSettings(chat_id, env);
+    } else if (data === 'stats') {
+        await handleStats(chat_id, env);
     } else if (data.startsWith('set_active:')) {
         const channel = data.substring('set_active:'.length);
         await env.KV_B.put(`active_channel_${chat_id}`, channel);
@@ -171,7 +200,7 @@ async function handleChannelManagement(chat_id: number, env: Env) {
 }
 
 async function handleAddChannel(chat_id: number, channel: string, env: Env) {
-    if (channel && channel.startsWith('@')) {
+    if (channel && (channel.startsWith('@') || /^-100\d{10}$/.test(channel))) {
         const channels: string[] = await env.KV_B.get(`channels_${chat_id}`, 'json') || [];
         if (!channels.includes(channel)) {
             channels.push(channel);
@@ -181,7 +210,7 @@ async function handleAddChannel(chat_id: number, channel: string, env: Env) {
             await sendTelegramMessage(chat_id, `Channel ${channel} is already registered.`, env);
         }
     } else {
-        await sendTelegramMessage(chat_id, 'Invalid channel format. Please use `@channel_id`.', env);
+        await sendTelegramMessage(chat_id, 'Invalid channel format. Please use `@channel_id` or a valid channel ID like `-100...`.', env);
     }
 }
 
