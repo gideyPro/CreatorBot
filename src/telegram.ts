@@ -5,6 +5,7 @@ export async function sendTelegramMessage(chat_id: number, text: string, env: En
     const payload = {
         chat_id: chat_id,
         text: text,
+        parse_mode: 'Markdown',
     };
 
     try {
@@ -68,6 +69,7 @@ export async function sendInlineKeyboardMessage(chat_id: number, text: string, k
     const payload = {
         chat_id: chat_id,
         text: text,
+        parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: keyboard,
         },
