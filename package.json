@@ -1,5 +1,5 @@
 {
-  "name": "telegold",
+  "name": "CreatorBot",
   "version": "1.0.0",
   "description": "A minimal Telegram bot running on a Cloudflare Worker.",
   "main": "src/index.ts",
