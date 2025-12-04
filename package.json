@@ -1,5 +1,5 @@
 {
-  "name": "CreatorBot",
+  "name": "creatorbot",
   "version": "1.0.0",
   "description": "A Cloudflare Worker based Telegram bot responsible for Managing channels automatically.",
   "main": "src/index.ts",
