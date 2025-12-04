@@ -1,6 +1,7 @@
 import { Env } from './index';
 import { generateArticle, listModels } from './groq';
-import { sendTelegramMessage, getChatMemberCount, sendInlineKeyboardMessage } from './telegram';
+import { sendTelegramMessage, getChatMemberCount, sendInlineKeyboardMessage, sendPhoto } from './telegram';
+import { generateImage } from './image';
 
 export async function handleUpdate(update: any, env: Env) {
     if (update.callback_query) {
@@ -74,18 +75,38 @@ Generate a Telegram post about: "${prompt}".
     `;
 
     if (prompt) {
-        const result = await generateArticle(env.GROQ_API_KEY, formattedPrompt, selectedModel);
-        if (result.success) {
+        const articleResult = await generateArticle(env.GROQ_API_KEY, formattedPrompt, selectedModel);
+        if (articleResult.success) {
             const targetChat = activeChannel || chat_id;
-            if (await sendTelegramMessage(targetChat, result.content, env)) {
-                if (activeChannel) {
-                    await sendTelegramMessage(chat_id, `Article successfully posted to ${activeChannel}.`, env);
+            const imagePromptResult = await generateArticle(env.GROQ_API_KEY, `Generate a short, descriptive image prompt from the following article: ${articleResult.content}`, selectedModel);
+            if (imagePromptResult.success) {
+                const imageUrl = generateImage(imagePromptResult.content);
+                if (await sendPhoto(targetChat, imageUrl, articleResult.content, env)) {
+                    if (activeChannel) {
+                        await sendTelegramMessage(chat_id, `Article with image successfully posted to ${activeChannel}.`, env);
+                    }
+                } else {
+                    await sendTelegramMessage(chat_id, `Failed to post the article with image to ${targetChat}. Please check if the bot is an administrator in the channel. Posting article without image.`, env);
+                    if (await sendTelegramMessage(targetChat, articleResult.content, env)) {
+                        if (activeChannel) {
+                            await sendTelegramMessage(chat_id, `Article successfully posted to ${activeChannel}.`, env);
+                        }
+                    } else {
+                        await sendTelegramMessage(chat_id, `Failed to post the article to ${targetChat}. Please check if the bot is an administrator in the channel.`, env);
+                    }
                 }
             } else {
-                await sendTelegramMessage(chat_id, `Failed to post the article to ${targetChat}. Please check if the bot is an administrator in the channel.`, env);
+                await sendTelegramMessage(chat_id, `Failed to generate image prompt: ${imagePromptResult.content}. Posting article without image.`, env);
+                if (await sendTelegramMessage(targetChat, articleResult.content, env)) {
+                    if (activeChannel) {
+                        await sendTelegramMessage(chat_id, `Article successfully posted to ${activeChannel}.`, env);
+                    }
+                } else {
+                    await sendTelegramMessage(chat_id, `Failed to post the article to ${targetChat}. Please check if the bot is an administrator in the channel.`, env);
+                }
             }
         } else {
-            await sendTelegramMessage(chat_id, result.content, env);
+            await sendTelegramMessage(chat_id, articleResult.content, env);
         }
     } else {
         await sendTelegramMessage(chat_id, 'Please provide a prompt after /generate.', env);
@@ -208,7 +229,7 @@ async function handleChannelManagement(chat_id: number, env: Env) {
 }
 
 async function handleAddChannel(chat_id: number, channel: string, env: Env) {
-    if (channel && (channel.startsWith('@') || /^-100\d{10}$/.test(channel))) {
+    if (channel && (channel.startsWith('@') || /^-100\d+$/.test(channel))) {
         const channels: string[] = await env.KV_B.get(`channels_${chat_id}`, 'json') || [];
         if (!channels.includes(channel)) {
             channels.push(channel);
