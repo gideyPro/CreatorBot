@@ -14,10 +14,10 @@ export default {
     },
 };
 
-router.post('/webhook', async (request: Request, env: Env) => {
+router.post('/webhook', async (request: Request, env: Env, ctx: ExecutionContext) => {
     try {
         const update = await request.json<any>();
-        await handleUpdate(update, env);
+        ctx.waitUntil(handleUpdate(update, env, ctx));
     } catch (e) {
         console.error('Error processing webhook:', e);
     }

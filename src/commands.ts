@@ -1,11 +1,11 @@
 import { Env } from './index';
 import { generateArticle, listModels } from './groq';
-import { sendTelegramMessage, getChatMemberCount, sendInlineKeyboardMessage, sendPhoto } from './telegram';
+import { sendTelegramMessage, getChatMemberCount, sendInlineKeyboardMessage, sendPhoto, editMessageText, deleteMessage } from './telegram';
 import { generateImage } from './image';
 
-export async function handleUpdate(update: any, env: Env) {
+export async function handleUpdate(update: any, env: Env, ctx: ExecutionContext) {
     if (update.callback_query) {
-        await handleCallbackQuery(update.callback_query, env);
+        await handleCallbackQuery(update.callback_query, env, ctx);
         return;
     }
 
@@ -59,6 +59,14 @@ async function handleGenerateArticle(chat_id: number, env: Env) {
 }
 
 async function handleGenerate(chat_id: number, prompt: string, env: Env) {
+    if (!prompt) {
+        await sendTelegramMessage(chat_id, 'Please provide a prompt after /generate.', env);
+        return;
+    }
+
+    const statusMessageId = await sendTelegramMessage(chat_id, 'Generating article...', env);
+    if (!statusMessageId) return;
+
     const selectedModel = await env.KV_B.get(`model_${chat_id}`) || 'llama3-8b-8192';
     const activeChannel: string | null = await env.KV_B.get(`active_channel_${chat_id}`);
     const formattedPrompt = `
@@ -74,43 +82,36 @@ Generate a Telegram post about: "${prompt}".
 - Use emojis to make it engaging.
     `;
 
-    if (prompt) {
-        const articleResult = await generateArticle(env.GROQ_API_KEY, formattedPrompt, selectedModel);
-        if (articleResult.success) {
-            const targetChat = activeChannel || chat_id;
-            const imagePromptResult = await generateArticle(env.GROQ_API_KEY, `Generate a short, descriptive image prompt from the following article: ${articleResult.content}`, selectedModel);
-            if (imagePromptResult.success) {
-                const imageUrl = generateImage(imagePromptResult.content);
-                if (await sendPhoto(targetChat, imageUrl, articleResult.content, env)) {
-                    if (activeChannel) {
-                        await sendTelegramMessage(chat_id, `Article with image successfully posted to ${activeChannel}.`, env);
-                    }
-                } else {
-                    await sendTelegramMessage(chat_id, `Failed to post the article with image to ${targetChat}. Please check if the bot is an administrator in the channel. Posting article without image.`, env);
-                    if (await sendTelegramMessage(targetChat, articleResult.content, env)) {
-                        if (activeChannel) {
-                            await sendTelegramMessage(chat_id, `Article successfully posted to ${activeChannel}.`, env);
-                        }
-                    } else {
-                        await sendTelegramMessage(chat_id, `Failed to post the article to ${targetChat}. Please check if the bot is an administrator in the channel.`, env);
-                    }
-                }
-            } else {
-                await sendTelegramMessage(chat_id, `Failed to generate image prompt: ${imagePromptResult.content}. Posting article without image.`, env);
-                if (await sendTelegramMessage(targetChat, articleResult.content, env)) {
-                    if (activeChannel) {
-                        await sendTelegramMessage(chat_id, `Article successfully posted to ${activeChannel}.`, env);
-                    }
-                } else {
-                    await sendTelegramMessage(chat_id, `Failed to post the article to ${targetChat}. Please check if the bot is an administrator in the channel.`, env);
-                }
+    const articleResult = await generateArticle(env.GROQ_API_KEY, formattedPrompt, selectedModel);
+    if (!articleResult.success) {
+        await editMessageText(chat_id, statusMessageId, articleResult.content, env);
+        return;
+    }
+
+    await editMessageText(chat_id, statusMessageId, 'Generating image...', env);
+    const targetChat = activeChannel || chat_id;
+    const imagePromptResult = await generateArticle(env.GROQ_API_KEY, `Generate a short, descriptive image prompt from the following article: ${articleResult.content}`, selectedModel);
+
+    if (imagePromptResult.success) {
+        const imageUrl = generateImage(imagePromptResult.content);
+        if (await sendPhoto(targetChat, imageUrl, articleResult.content, env)) {
+            if (activeChannel) {
+                await sendTelegramMessage(chat_id, `Article with image successfully posted to ${activeChannel}.`, env);
             }
         } else {
-            await sendTelegramMessage(chat_id, articleResult.content, env);
+            await sendTelegramMessage(chat_id, `Failed to post the article with image to ${targetChat}. Please check if the bot is an administrator in the channel.`, env);
+            await sendTelegramMessage(chat_id, "Posted Without Image", env);
+            await sendTelegramMessage(targetChat, articleResult.content, env);
         }
     } else {
-        await sendTelegramMessage(chat_id, 'Please provide a prompt after /generate.', env);
+        await sendTelegramMessage(chat_id, `Failed to generate image prompt: ${imagePromptResult.content}.`, env);
+        await sendTelegramMessage(chat_id, "Posted Without Image", env);
+        await sendTelegramMessage(targetChat, articleResult.content, env);
     }
+
+    await deleteMessage(chat_id, statusMessageId, env);
+    const keyboard = [[{ text: '📝 Generate Again', callback_data: 'generate_article' }]];
+    await sendInlineKeyboardMessage(chat_id, 'Generation complete.', keyboard, env);
 }
 
 async function handleStats(chat_id: number, env: Env) {
@@ -127,6 +128,10 @@ async function handleStats(chat_id: number, env: Env) {
 }
 
 async function handleStart(chat_id: number, env: Env) {
+    const userState = await env.KV_B.get(`user_state_${chat_id}`);
+    if (userState === 'awaiting_topic') {
+        await env.KV_B.delete(`user_state_${chat_id}`);
+    }
     await sendDashboard(chat_id, env);
 }
 
@@ -154,7 +159,7 @@ async function handleSettings(chat_id: number, env: Env) {
     await sendInlineKeyboardMessage(chat_id, 'Settings:', keyboard, env);
 }
 
-async function handleCallbackQuery(callbackQuery: any, env: Env) {
+async function handleCallbackQuery(callbackQuery: any, env: Env, ctx: ExecutionContext) {
     const chat_id = callbackQuery.message.chat.id;
     const data = callbackQuery.data;
 
