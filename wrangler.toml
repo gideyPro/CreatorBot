@@ -1,4 +1,4 @@
-name = "CreatorBot"
+name = "creatorbot"
 main = "src/index.ts" 
 compatibility_date = "2024-01-01" 
 workers_dev = true
@@ -8,8 +8,8 @@ workers_dev = true
 # =========================================================
 [[kv_namespaces]]
 # The 'binding' is the name your Worker code uses (env.KV_BINDING)
-binding = "KV_BINDING" 
+binding = "KV_B" 
 # The 'id' is the unique ID for your KV Namespace
-id = "59ff4573092e4901b72f53d96d999aef" 
+id = "0440dcda5efb40ecbf3ad2eb9aeed8dc" 
 
 # Note: The BOT_TOKEN and GROQ_API_KEY must be set as Secrets in the Cloudflare dashboard.
