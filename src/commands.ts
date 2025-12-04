@@ -69,6 +69,7 @@ async function handleGenerate(chat_id: number, prompt: string, env: Env) {
 
     const selectedModel = await env.KV_B.get(`model_${chat_id}`) || 'llama3-8b-8192';
     const activeChannel: string | null = await env.KV_B.get(`active_channel_${chat_id}`);
+    const imageGeneration = await env.KV_B.get(`image_generation_${chat_id}`) || 'enabled';
     const formattedPrompt = `
 Generate a Telegram post about: "${prompt}".
 
@@ -88,24 +89,35 @@ Generate a Telegram post about: "${prompt}".
         return;
     }
 
-    await editMessageText(chat_id, statusMessageId, 'Generating image...', env);
     const targetChat = activeChannel || chat_id;
-    const imagePromptResult = await generateArticle(env.GROQ_API_KEY, `Generate a short, descriptive image prompt from the following article: ${articleResult.content}`, selectedModel);
 
-    if (imagePromptResult.success) {
-        const imageUrl = generateImage(imagePromptResult.content);
-        if (await sendPhoto(targetChat, imageUrl, articleResult.content, env)) {
-            if (activeChannel) {
-                await sendTelegramMessage(chat_id, `Article with image successfully posted to ${activeChannel}.`, env);
+    if (imageGeneration === 'enabled') {
+        await editMessageText(chat_id, statusMessageId, 'Generating image...', env);
+        const imagePromptResult = await generateArticle(env.GROQ_API_KEY, `Generate a short, descriptive image prompt from the following article: ${articleResult.content}`, selectedModel);
+
+        if (imagePromptResult.success) {
+            const imageResult = await generateImage(imagePromptResult.content);
+            if (imageResult.success && imageResult.imageUrl) {
+                if (await sendPhoto(targetChat, imageResult.imageUrl, articleResult.content, env)) {
+                    if (activeChannel) {
+                        await sendTelegramMessage(chat_id, `Article with image successfully posted to ${activeChannel}.`, env);
+                    }
+                } else {
+                    await sendTelegramMessage(chat_id, `Failed to post the article with image to ${targetChat}. Please check if the bot is an administrator in the channel.`, env);
+                    await sendTelegramMessage(chat_id, "Posted Without Image", env);
+                    await sendTelegramMessage(targetChat, articleResult.content, env);
+                }
+            } else {
+                await sendTelegramMessage(chat_id, `Failed to generate image prompt: ${imagePromptResult.content}.`, env);
+                await sendTelegramMessage(chat_id, "Posted Without Image", env);
+                await sendTelegramMessage(targetChat, articleResult.content, env);
             }
         } else {
-            await sendTelegramMessage(chat_id, `Failed to post the article with image to ${targetChat}. Please check if the bot is an administrator in the channel.`, env);
+            await sendTelegramMessage(chat_id, `Failed to generate image prompt: ${imagePromptResult.content}.`, env);
             await sendTelegramMessage(chat_id, "Posted Without Image", env);
             await sendTelegramMessage(targetChat, articleResult.content, env);
         }
     } else {
-        await sendTelegramMessage(chat_id, `Failed to generate image prompt: ${imagePromptResult.content}.`, env);
-        await sendTelegramMessage(chat_id, "Posted Without Image", env);
         await sendTelegramMessage(targetChat, articleResult.content, env);
     }
 
@@ -153,6 +165,7 @@ This bot helps you generate articles and manage your Telegram channels. Use the 
 async function handleSettings(chat_id: number, env: Env) {
     const keyboard = [
         [{ text: 'Model Settings', callback_data: 'model_settings' }],
+        [{ text: 'Image Generation', callback_data: 'image_generation_settings' }],
         [{ text: 'Channel Management', callback_data: 'channel_management' }],
         [{ text: '⬅️ Back to Menu', callback_data: 'back_to_menu' }]
     ];
@@ -190,7 +203,23 @@ async function handleCallbackQuery(callbackQuery: any, env: Env, ctx: ExecutionC
         const channel = data.substring('set_active:'.length);
         await env.KV_B.put(`active_channel_${chat_id}`, channel);
         await sendTelegramMessage(chat_id, `Active channel set to ${channel}.`, env);
+    } else if (data === 'image_generation_settings') {
+        await handleImageGenerationSettings(chat_id, env);
+    } else if (data.startsWith('set_image_generation:')) {
+        const imageGeneration = data.substring('set_image_generation:'.length);
+        await env.KV_B.put(`image_generation_${chat_id}`, imageGeneration);
+        await sendTelegramMessage(chat_id, `Image generation set to ${imageGeneration}.`, env);
     }
+}
+
+async function handleImageGenerationSettings(chat_id: number, env: Env) {
+    const imageGeneration = await env.KV_B.get(`image_generation_${chat_id}`) || 'enabled';
+    const keyboard = [
+        [{ text: `Status: ${imageGeneration}`, callback_data: 'none' }],
+        [{ text: 'Enable', callback_data: 'set_image_generation:enabled' }, { text: 'Disable', callback_data: 'set_image_generation:disabled' }],
+        [{ text: '⬅️ Back to Settings', callback_data: 'settings' }]
+    ];
+    await sendInlineKeyboardMessage(chat_id, 'Image Generation Settings:', keyboard, env);
 }
 
 async function handleModelSettings(chat_id: number, env: Env) {

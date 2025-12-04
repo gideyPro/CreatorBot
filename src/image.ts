@@ -1,4 +1,14 @@
-export function generateImage(prompt: string): string {
+export async function generateImage(prompt: string): Promise<{ success: boolean, imageUrl?: string, error?: string }> {
     const encodedPrompt = encodeURIComponent(prompt);
-    return `https://image.pollinations.ai/prompt/${encodedPrompt}`;
+    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}`;
+    try {
+        const response = await fetch(url);
+        if (response.ok) {
+            return { success: true, imageUrl: url };
+        } else {
+            return { success: false, error: `Failed to pre-warm image. Status: ${response.status}` };
+        }
+    } catch (error) {
+        return { success: false, error: `Failed to pre-warm image. Error: ${error.message}` };
+    }
 }
