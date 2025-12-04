@@ -67,7 +67,7 @@ async function handleGenerateArticle(chat_id: number, env: Env) {
     await sendTelegramMessage(chat_id, 'Please enter the topic for the article:', env);
 }
 
-async function handleGenerate(chat_id: number, prompt: string, env: Env) {
+export async function handleGenerate(chat_id: number, prompt: string, env: Env) {
     if (!prompt) {
         await sendTelegramMessage(chat_id, 'Please provide a prompt after /generate.', env);
         return;
