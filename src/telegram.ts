@@ -1,6 +1,6 @@
 import { Env } from './index';
 
-export async function sendTelegramMessage(chat_id: number, text: string, env: Env): Promise<boolean> {
+export async function sendTelegramMessage(chat_id: number | string, text: string, env: Env): Promise<boolean> {
     const url = `https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`;
     const payload = {
         chat_id: chat_id,
@@ -33,7 +33,7 @@ export async function sendTelegramMessage(chat_id: number, text: string, env: En
     }
 }
 
-export async function getChatMemberCount(chat_id: number, env: Env): Promise<number> {
+export async function getChatMemberCount(chat_id: number | string, env: Env): Promise<number> {
     const url = `https://api.telegram.org/bot${env.BOT_TOKEN}/getChatMemberCount`;
     const payload = {
         chat_id: chat_id,
@@ -64,7 +64,7 @@ export async function getChatMemberCount(chat_id: number, env: Env): Promise<num
     }
 }
 
-export async function sendInlineKeyboardMessage(chat_id: number, text: string, keyboard: any, env: Env): Promise<boolean> {
+export async function sendInlineKeyboardMessage(chat_id: number | string, text: string, keyboard: any, env: Env): Promise<boolean> {
     const url = `https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`;
     const payload = {
         chat_id: chat_id,
