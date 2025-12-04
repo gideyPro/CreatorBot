@@ -65,7 +65,7 @@ Please generate a well-formatted and engaging article for a Telegram channel bas
 The article should be easy to read and visually appealing, using Telegram's Markdown formatting to its full potential.
 
 - Use *bold* for headings and important keywords.
-- Use _italic* for emphasis and subheadings.
+- Use _italic_ for emphasis and subheadings.
 - Use \`code\` for any code snippets or technical terms.
 - Use [links](https.example.com) for any URLs.
 - Break down the content into paragraphs and use bullet points or numbered lists where appropriate to improve readability.
@@ -75,21 +75,21 @@ Topic: "${prompt}"
     `;
 
     if (prompt) {
-        const article = await generateArticle(env.GROQ_API_KEY, formattedPrompt, selectedModel);
-        const targetChat = activeChannel || chat_id;
-
-        if (await sendTelegramMessage(targetChat, article, env)) {
-            if (activeChannel) {
-                await sendTelegramMessage(chat_id, `Article successfully posted to ${activeChannel}.`, env);
+        const result = await generateArticle(env.GROQ_API_KEY, formattedPrompt, selectedModel);
+        if (result.success) {
+            const targetChat = activeChannel || chat_id;
+            if (await sendTelegramMessage(targetChat, result.content, env)) {
+                if (activeChannel) {
+                    await sendTelegramMessage(chat_id, `Article successfully posted to ${activeChannel}.`, env);
+                }
+            } else {
+                await sendTelegramMessage(chat_id, `Failed to post the article to ${targetChat}. Please check if the bot is an administrator in the channel.`, env);
             }
         } else {
-            console.error('Failed to send generated article.');
-            await sendTelegramMessage(chat_id, 'Failed to post the article.', env);
+            await sendTelegramMessage(chat_id, result.content, env);
         }
     } else {
-        if (!await sendTelegramMessage(chat_id, 'Please provide a prompt after /generate.', env)) {
-            console.error('Failed to send prompt reminder.');
-        }
+        await sendTelegramMessage(chat_id, 'Please provide a prompt after /generate.', env);
     }
 }
 
