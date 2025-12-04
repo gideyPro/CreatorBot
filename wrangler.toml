@@ -12,4 +12,4 @@ binding = "KV_BINDING"
 # The 'id' is the unique ID for your KV Namespace
 id = "59ff4573092e4901b72f53d96d999aef" 
 
-# Note: The BOT_TOKEN must be set as a Secret in the Cloudflare dashboard.
+# Note: The BOT_TOKEN and GROQ_API_KEY must be set as Secrets in the Cloudflare dashboard.
