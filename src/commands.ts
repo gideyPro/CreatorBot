@@ -65,7 +65,7 @@ Please generate a well-formatted and engaging article for a Telegram channel bas
 The article should be easy to read and visually appealing, using Telegram's Markdown formatting to its full potential.
 
 - Use *bold* for headings and important keywords.
-- Use _italic_ for emphasis and subheadings.
+- Use _italic* for emphasis and subheadings.
 - Use \`code\` for any code snippets or technical terms.
 - Use [links](https.example.com) for any URLs.
 - Break down the content into paragraphs and use bullet points or numbered lists where appropriate to improve readability.
@@ -162,6 +162,8 @@ async function handleCallbackQuery(callbackQuery: any, env: Env) {
         await handleSettings(chat_id, env);
     } else if (data === 'stats') {
         await handleStats(chat_id, env);
+    } else if (data === 'channel_management') {
+        await handleChannelManagement(chat_id, env);
     } else if (data.startsWith('set_active:')) {
         const channel = data.substring('set_active:'.length);
         await env.KV_B.put(`active_channel_${chat_id}`, channel);
