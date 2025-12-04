@@ -50,6 +50,15 @@ async function handleMessage(chat_id: number, text: string, env: Env) {
     if (userState === 'awaiting_topic') {
         await handleGenerate(chat_id, text, env);
         await env.KV_B.delete(`user_state_${chat_id}`);
+    } else if (userState === 'awaiting_schedule') {
+        const topics = text.split('\n').filter(topic => topic.trim() !== '');
+        if (topics.length > 0) {
+            await env.KV_B.put(`scheduled_topics_${chat_id}`, JSON.stringify(topics));
+            await sendTelegramMessage(chat_id, `Successfully scheduled ${topics.length} topics.`, env);
+        } else {
+            await sendTelegramMessage(chat_id, 'No topics were provided.', env);
+        }
+        await env.KV_B.delete(`user_state_${chat_id}`);
     }
 }
 
@@ -78,7 +87,7 @@ Generate a Telegram post about: "${prompt}".
 - Use *bold* for titles and key phrases.
 - Use _italic_ for emphasis.
 - Use \`code\` for technical terms.
-- Use [links](https://...) for URLs.
+- **Do not include any external links.**
 - **Do not use**: \`---\`, \`**\`, or tables.
 - Use emojis to make it engaging.
     `;
@@ -138,7 +147,7 @@ async function handleStats(chat_id: number, env: Env) {
 
 async function handleStart(chat_id: number, env: Env) {
     const userState = await env.KV_B.get(`user_state_${chat_id}`);
-    if (userState === 'awaiting_topic') {
+    if (userState === 'awaiting_topic' || userState === 'awaiting_schedule') {
         await env.KV_B.delete(`user_state_${chat_id}`);
     }
     await sendDashboard(chat_id, env);
@@ -152,6 +161,7 @@ This bot helps you generate articles and manage your Telegram channels. Use the 
     `;
     const keyboard = [
         [{ text: '📝 Generate Article', callback_data: 'generate_article' }],
+        [{ text: '🗓️ Schedule Posts', callback_data: 'schedule_posts' }],
         [{ text: '📺 Channel Management', callback_data: 'channel_management' }],
         [{ text: '⚙️ Settings', callback_data: 'settings' }],
         [{ text: '📊 Statistics', callback_data: 'stats' }]
@@ -206,7 +216,14 @@ async function handleCallbackQuery(callbackQuery: any, env: Env, ctx: ExecutionC
         const imageGeneration = data.substring('set_image_generation:'.length);
         await env.KV_B.put(`image_generation_${chat_id}`, imageGeneration);
         await sendTelegramMessage(chat_id, `Image generation set to ${imageGeneration}.`, env);
+    } else if (data === 'schedule_posts') {
+        await handleSchedulePosts(chat_id, env);
     }
+}
+
+async function handleSchedulePosts(chat_id: number, env: Env) {
+    await env.KV_B.put(`user_state_${chat_id}`, 'awaiting_schedule');
+    await sendTelegramMessage(chat_id, 'Please enter a list of topics, each on a new line:', env);
 }
 
 async function handleImageGenerationSettings(chat_id: number, env: Env) {
