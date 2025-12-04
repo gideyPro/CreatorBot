@@ -61,17 +61,16 @@ async function handleGenerate(chat_id: number, prompt: string, env: Env) {
     const selectedModel = await env.KV_B.get(`model_${chat_id}`) || 'llama3-8b-8192';
     const activeChannel: string | null = await env.KV_B.get(`active_channel_${chat_id}`);
     const formattedPrompt = `
-Please generate a well-formatted and engaging article for a Telegram channel based on the following topic.
-The article should be easy to read and visually appealing, using Telegram's Markdown formatting to its full potential.
+Generate a Telegram post about: "${prompt}".
 
-- Use *bold* for headings and important keywords.
-- Use _italic_ for emphasis and subheadings.
-- Use \`code\` for any code snippets or technical terms.
-- Use [links](https.example.com) for any URLs.
-- Break down the content into paragraphs and use bullet points or numbered lists where appropriate to improve readability.
-- Add relevant emojis to make the content more engaging.
-
-Topic: "${prompt}"
+**Formatting Rules:**
+- Use Markdown that is compatible with Telegram.
+- Use *bold* for titles and key phrases.
+- Use _italic_ for emphasis.
+- Use \`code\` for technical terms.
+- Use [links](https://...) for URLs.
+- **Do not use**: \`---\`, \`**\`, or tables.
+- Use emojis to make it engaging.
     `;
 
     if (prompt) {
@@ -114,14 +113,7 @@ async function sendDashboard(chat_id: number, env: Env) {
     const welcomeMessage = `
 Welcome to the Creator Bot! 🚀
 
-Here are the commands you can use:
-- \`/generate <topic>\`: Generates an article on the specified topic.
-- \`/stats\`: Shows the number of members in this channel.
-- \`/start\`: Displays this welcome message.
-- \`/settings\`: Choose a model for article generation.
-- \`/addchannel <@channel_id>\`: Adds a channel to the bot.
-
-Let's create something amazing together! ✨
+This bot helps you generate articles and manage your Telegram channels. Use the buttons below to navigate.
     `;
     const keyboard = [
         [{ text: '📝 Generate Article', callback_data: 'generate_article' }],
@@ -136,6 +128,7 @@ async function handleSettings(chat_id: number, env: Env) {
     const keyboard = [
         [{ text: 'Model Settings', callback_data: 'model_settings' }],
         [{ text: 'Channel Management', callback_data: 'channel_management' }],
+        [{ text: '⬅️ Back to Menu', callback_data: 'back_to_menu' }]
     ];
     await sendInlineKeyboardMessage(chat_id, 'Settings:', keyboard, env);
 }
@@ -162,8 +155,11 @@ async function handleCallbackQuery(callbackQuery: any, env: Env) {
         await handleSettings(chat_id, env);
     } else if (data === 'stats') {
         await handleStats(chat_id, env);
-    } else if (data === 'channel_management') {
-        await handleChannelManagement(chat_id, env);
+    } else if (data.startsWith('remove_channel:')) {
+        const channelToRemove = data.substring('remove_channel:'.length);
+        await handleRemoveChannel(chat_id, channelToRemove, env);
+    } else if (data === 'back_to_menu') {
+        await sendDashboard(chat_id, env);
     } else if (data.startsWith('set_active:')) {
         const channel = data.substring('set_active:'.length);
         await env.KV_B.put(`active_channel_${chat_id}`, channel);
@@ -178,6 +174,7 @@ async function handleModelSettings(chat_id: number, env: Env) {
             text: model.id,
             callback_data: `set_model:${model.id}`,
         }]));
+        keyboard.push([{ text: '⬅️ Back to Menu', callback_data: 'back_to_menu' }]);
         await sendInlineKeyboardMessage(chat_id, 'Please select a model:', keyboard, env);
     } else {
         await sendTelegramMessage(chat_id, 'Could not retrieve models.', env);
@@ -191,12 +188,21 @@ async function handleChannelManagement(chat_id: number, env: Env) {
     let message = `*Channel Management*\n\n`;
     message += `*Active Channel:* \`${activeChannel}\`\n\n`;
     message += `*Registered Channels:*\n`;
-    message += channels.length > 0 ? channels.map(c => `- \`${c}\``).join('\n') : 'No channels added yet.';
 
-    const keyboard = [
-        [{ text: 'Add a Channel', callback_data: 'add_channel' }],
-        [{ text: 'Set Active Channel', callback_data: 'set_active_channel' }],
-    ];
+    const keyboard = [];
+    if (channels.length > 0) {
+        channels.forEach(channel => {
+            keyboard.push([{ text: `❌ ${channel}`, callback_data: `remove_channel:${channel}` }]);
+        });
+    } else {
+        message += 'No channels added yet.';
+    }
+
+    keyboard.push([
+        { text: '➕ Add a Channel', callback_data: 'add_channel' },
+        { text: '✅ Set Active Channel', callback_data: 'set_active_channel' }
+    ]);
+    keyboard.push([{ text: '⬅️ Back to Menu', callback_data: 'back_to_menu' }]);
 
     await sendInlineKeyboardMessage(chat_id, message, keyboard, env);
 }
@@ -214,6 +220,20 @@ async function handleAddChannel(chat_id: number, channel: string, env: Env) {
     } else {
         await sendTelegramMessage(chat_id, 'Invalid channel format. Please use `@channel_id` or a valid channel ID like `-100...`.', env);
     }
+}
+
+async function handleRemoveChannel(chat_id: number, channelToRemove: string, env: Env) {
+    let channels: string[] = await env.KV_B.get(`channels_${chat_id}`, 'json') || [];
+    channels = channels.filter(channel => channel !== channelToRemove);
+    await env.KV_B.put(`channels_${chat_id}`, JSON.stringify(channels));
+
+    const activeChannel: string | null = await env.KV_B.get(`active_channel_${chat_id}`);
+    if (activeChannel === channelToRemove) {
+        await env.KV_B.delete(`active_channel_${chat_id}`);
+    }
+
+    await sendTelegramMessage(chat_id, `Channel ${channelToRemove} has been removed.`, env);
+    await handleChannelManagement(chat_id, env);
 }
 
 async function handleSetActiveChannel(chat_id: number, env: Env) {
