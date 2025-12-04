@@ -16,11 +16,14 @@ export default {
     async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
         const users: string[] = await env.KV_B.get('users', 'json') || [];
         for (const user of users) {
-            const topics: string[] = await env.KV_B.get(`scheduled_topics_${user}`, 'json') || [];
-            if (topics.length > 0) {
-                const topic = topics.shift();
-                await env.KV_B.put(`scheduled_topics_${user}`, JSON.stringify(topics));
-                await handleGenerate(parseInt(user), topic, env);
+            const scheduleStatus = await env.KV_B.get(`schedule_status_${user}`) || 'active';
+            if (scheduleStatus === 'active') {
+                const topics: string[] = await env.KV_B.get(`scheduled_topics_${user}`, 'json') || [];
+                if (topics.length > 0) {
+                    const topic = topics.shift();
+                    await env.KV_B.put(`scheduled_topics_${user}`, JSON.stringify(topics));
+                    await handleGenerate(parseInt(user), topic, env);
+                }
             }
         }
     }

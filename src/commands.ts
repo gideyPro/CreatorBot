@@ -161,7 +161,7 @@ This bot helps you generate articles and manage your Telegram channels. Use the 
     `;
     const keyboard = [
         [{ text: '📝 Generate Article', callback_data: 'generate_article' }],
-        [{ text: '🗓️ Schedule Posts', callback_data: 'schedule_posts' }],
+        [{ text: '🗓️ Schedule Management', callback_data: 'schedule_management' }],
         [{ text: '📺 Channel Management', callback_data: 'channel_management' }],
         [{ text: '⚙️ Settings', callback_data: 'settings' }],
         [{ text: '📊 Statistics', callback_data: 'stats' }]
@@ -216,14 +216,52 @@ async function handleCallbackQuery(callbackQuery: any, env: Env, ctx: ExecutionC
         const imageGeneration = data.substring('set_image_generation:'.length);
         await env.KV_B.put(`image_generation_${chat_id}`, imageGeneration);
         await sendTelegramMessage(chat_id, `Image generation set to ${imageGeneration}.`, env);
-    } else if (data === 'schedule_posts') {
-        await handleSchedulePosts(chat_id, env);
+    } else if (data === 'schedule_management') {
+        await handleScheduleManagement(chat_id, env);
+    } else if (data === 'add_scheduled_topics') {
+        await env.KV_B.put(`user_state_${chat_id}`, 'awaiting_schedule');
+        await sendTelegramMessage(chat_id, 'Please enter a list of topics, each on a new line:', env);
+    } else if (data === 'view_scheduled_topics') {
+        await handleViewScheduledTopics(chat_id, env);
+    } else if (data.startsWith('toggle_schedule:')) {
+        const newStatus = data.substring('toggle_schedule:'.length);
+        await env.KV_B.put(`schedule_status_${chat_id}`, newStatus);
+        await handleScheduleManagement(chat_id, env);
+    } else if (data === 'clear_schedule') {
+        await env.KV_B.delete(`scheduled_topics_${chat_id}`);
+        await handleScheduleManagement(chat_id, env);
     }
 }
 
-async function handleSchedulePosts(chat_id: number, env: Env) {
-    await env.KV_B.put(`user_state_${chat_id}`, 'awaiting_schedule');
-    await sendTelegramMessage(chat_id, 'Please enter a list of topics, each on a new line:', env);
+async function handleViewScheduledTopics(chat_id: number, env: Env) {
+    const scheduledTopics: string[] = await env.KV_B.get(`scheduled_topics_${chat_id}`, 'json') || [];
+    let message = '*Scheduled Topics*\n\n';
+    if (scheduledTopics.length > 0) {
+        message += scheduledTopics.map((topic, index) => `${index + 1}. ${topic}`).join('\n');
+    } else {
+        message += 'No topics are scheduled.';
+    }
+    const keyboard = [[{ text: '⬅️ Back to Schedule Management', callback_data: 'schedule_management' }]];
+    await sendInlineKeyboardMessage(chat_id, message, keyboard, env);
+}
+
+async function handleScheduleManagement(chat_id: number, env: Env) {
+    const scheduledTopics: string[] = await env.KV_B.get(`scheduled_topics_${chat_id}`, 'json') || [];
+    const scheduleStatus = await env.KV_B.get(`schedule_status_${chat_id}`) || 'active';
+
+    let message = `*Schedule Management*\n\n`;
+    message += `*Status:* \`${scheduleStatus}\`\n`;
+    message += `*Topics in Queue:* \`${scheduledTopics.length}\`\n\n`;
+    message += 'Manage your scheduled posts below.';
+
+    const keyboard = [
+        [{ text: '➕ Add Topics', callback_data: 'add_scheduled_topics' }],
+        [{ text: '📄 View Topics', callback_data: 'view_scheduled_topics' }],
+        [{ text: `⏯️ ${scheduleStatus === 'active' ? 'Pause' : 'Resume'} Schedule`, callback_data: `toggle_schedule:${scheduleStatus === 'active' ? 'paused' : 'active'}` }],
+        [{ text: '🗑️ Clear Schedule', callback_data: 'clear_schedule' }],
+        [{ text: '⬅️ Back to Menu', callback_data: 'back_to_menu' }]
+    ];
+    await sendInlineKeyboardMessage(chat_id, message, keyboard, env);
 }
 
 async function handleImageGenerationSettings(chat_id: number, env: Env) {
