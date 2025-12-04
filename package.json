@@ -1,7 +1,7 @@
 {
   "name": "CreatorBot",
   "version": "1.0.0",
-  "description": "A minimal Telegram bot running on a Cloudflare Worker.",
+  "description": "A Cloudflare Worker based Telegram bot responsible for Managing channels automatically.",
   "main": "src/index.ts",
   "scripts": {
     "dev": "wrangler dev src/index.ts",
