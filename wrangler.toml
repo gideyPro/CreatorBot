@@ -10,6 +10,6 @@ workers_dev = true
 # The 'binding' is the name your Worker code uses (env.KV_BINDING)
 binding = "KV_B" 
 # The 'id' is the unique ID for your KV Namespace
-id = "0440dcda5efb40ecbf3ad2eb9aeed8dc" 
+id = "59ff4573092e4901b72f53d96d999aef" 
 
 # Note: The BOT_TOKEN and GROQ_API_KEY must be set as Secrets in the Cloudflare dashboard.
