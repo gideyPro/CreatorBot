@@ -103,18 +103,15 @@ Generate a Telegram post about: "${prompt}".
                         await sendTelegramMessage(chat_id, `Article with image successfully posted to ${activeChannel}.`, env);
                     }
                 } else {
-                    await sendTelegramMessage(chat_id, `Failed to post the article with image to ${targetChat}. Please check if the bot is an administrator in the channel.`, env);
-                    await sendTelegramMessage(chat_id, "Posted Without Image", env);
+                    await editMessageText(chat_id, statusMessageId, 'Image generation failed. Posting without image...', env);
                     await sendTelegramMessage(targetChat, articleResult.content, env);
                 }
             } else {
-                await sendTelegramMessage(chat_id, `Failed to generate image prompt: ${imagePromptResult.content}.`, env);
-                await sendTelegramMessage(chat_id, "Posted Without Image", env);
+                await editMessageText(chat_id, statusMessageId, `Failed to generate image prompt: ${imagePromptResult.content}. Posting without image...`, env);
                 await sendTelegramMessage(targetChat, articleResult.content, env);
             }
         } else {
-            await sendTelegramMessage(chat_id, `Failed to generate image prompt: ${imagePromptResult.content}.`, env);
-            await sendTelegramMessage(chat_id, "Posted Without Image", env);
+            await editMessageText(chat_id, statusMessageId, `Failed to generate image prompt: ${imagePromptResult.content}. Posting without image...`, env);
             await sendTelegramMessage(targetChat, articleResult.content, env);
         }
     } else {
