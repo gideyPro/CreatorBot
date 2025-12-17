@@ -100,12 +100,16 @@ Generate a Telegram post about: "${prompt}".
     }
 
     const translate = await env.KV_B.get(`translate_${chat_id}`) || 'disabled';
-    let translatedContent: string | null = null;
-    if (translate === 'enabled') {
-        translatedContent = await translateText(articleResult.content, 'am', env);
-    }
+    let finalContent = articleResult.content;
 
-    const finalContent = translatedContent ? `${articleResult.content}\n\n---\n\n${translatedContent}` : articleResult.content;
+    if (translate === 'enabled') {
+        const translationResult = await translateText(articleResult.content, 'am', env);
+        if (translationResult.success) {
+            finalContent += `\n\n---\n\n${translationResult.content}`;
+        } else {
+            await sendTelegramMessage(chat_id, `Translation failed: ${translationResult.content}`, env);
+        }
+    }
 
     const targetChat = activeChannel || chat_id;
 

@@ -1,6 +1,11 @@
 import { Env } from './index';
 
-export async function translateText(text: string, targetLanguage: string, env: Env): Promise<string | null> {
+interface TranslationResult {
+    success: boolean;
+    content: string;
+}
+
+export async function translateText(text: string, targetLanguage: string, env: Env): Promise<TranslationResult> {
     const url = `https://libretranslate.com/translate`;
     const payload = {
         q: text,
@@ -17,19 +22,22 @@ export async function translateText(text: string, targetLanguage: string, env: E
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`Translation API Error: ${response.status} - ${errorText}`);
-            return null;
+            const errorMessage = `Translation API Error: ${response.status} - ${errorText}`;
+            console.error(errorMessage);
+            return { success: false, content: errorMessage };
         }
 
         const data = await response.json();
         if (data.translatedText) {
-            return data.translatedText;
+            return { success: true, content: data.translatedText };
         } else {
-            console.error('Translation API returned no translations:', data);
-            return null;
+            const errorMessage = `Translation API returned no translations: ${JSON.stringify(data)}`;
+            console.error(errorMessage);
+            return { success: false, content: errorMessage };
         }
     } catch (error) {
-        console.error('Translation API Request Failed:', error);
-        return null;
+        const errorMessage = `Translation API Request Failed: ${error.message}`;
+        console.error(errorMessage);
+        return { success: false, content: errorMessage };
     }
 }
