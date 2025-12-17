@@ -86,7 +86,7 @@ Generate a Telegram post about: "${prompt}".
 **Formatting Rules:**
 - Use Markdown that is compatible with Telegram.
 - Use *bold* for titles and key phrases.
-- Use _italic* for emphasis.
+- Use _italic_ for emphasis.
 - Use \`code\` for technical terms.
 - **Do not include any external links.**
 - **Do not use**: \`---\`, \`**\`, or tables.
@@ -105,13 +105,14 @@ Generate a Telegram post about: "${prompt}".
     if (translate === 'enabled') {
         const translationResult = await translateText(articleResult.content, 'am', env);
         if (translationResult.success) {
-            finalContent += `\n\n---\n\n${translationResult.content}`;
+            finalContent = translationResult.content;
         } else {
             await sendTelegramMessage(chat_id, `Translation failed: ${translationResult.content}`, env);
         }
     }
 
     const targetChat = activeChannel || chat_id;
+    let postResult: any = 'Not attempted';
 
     if (imageGeneration === 'enabled') {
         await editMessageText(chat_id, statusMessageId, 'Generating image...', env);
@@ -120,24 +121,23 @@ Generate a Telegram post about: "${prompt}".
         if (imagePromptResult.success) {
             const imageResult = await generateImage(imagePromptResult.content);
             if (imageResult.success && imageResult.imageUrl) {
-                if (await sendPhoto(targetChat, imageResult.imageUrl, finalContent, env)) {
-                    if (activeChannel) {
-                        await sendTelegramMessage(chat_id, `Article with image successfully posted to ${activeChannel}.`, env);
-                    }
-                } else {
-                    await editMessageText(chat_id, statusMessageId, 'Image generation failed. Posting without image...', env);
-                    await sendTelegramMessage(targetChat, finalContent, env);
-                }
+                postResult = await sendPhoto(targetChat, imageResult.imageUrl, finalContent, env);
             } else {
                 await editMessageText(chat_id, statusMessageId, `Failed to generate image prompt: ${imagePromptResult.content}. Posting without image...`, env);
-                await sendTelegramMessage(targetChat, finalContent, env);
+                postResult = await sendTelegramMessage(targetChat, finalContent, env);
             }
         } else {
             await editMessageText(chat_id, statusMessageId, `Failed to generate image prompt: ${imagePromptResult.content}. Posting without image...`, env);
-            await sendTelegramMessage(targetChat, finalContent, env);
+            postResult = await sendTelegramMessage(targetChat, finalContent, env);
         }
     } else {
-        await sendTelegramMessage(targetChat, finalContent, env);
+        postResult = await sendTelegramMessage(targetChat, finalContent, env);
+    }
+
+    if (activeChannel && postResult) {
+        await sendTelegramMessage(chat_id, `Article successfully posted to ${activeChannel}.`, env);
+    } else if (activeChannel && !postResult) {
+        await sendTelegramMessage(chat_id, `Failed to post article to ${activeChannel}.`, env);
     }
 
     await deleteMessage(chat_id, statusMessageId, env);
