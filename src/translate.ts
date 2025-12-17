@@ -21,8 +21,11 @@ export async function translateText(text: string, targetLanguage: string, env: E
         }
 
         const data = await response.json();
-        if (data && data[0] && data[0][0] && data[0][0][0]) {
-            return { success: true, content: data[0][0][0] };
+        // The response is a nested array. The translated text is in the first element.
+        // We need to iterate over the segments and join them.
+        if (data && data[0]) {
+            const translatedText = data[0].map(segment => segment[0]).join('');
+            return { success: true, content: translatedText };
         } else {
             const errorMessage = `Translation API returned an unexpected response format: ${JSON.stringify(data)}`;
             console.error(errorMessage);
