@@ -86,7 +86,7 @@ Generate a Telegram post about: "${prompt}".
 **Formatting Rules:**
 - Use Markdown that is compatible with Telegram.
 - Use *bold* for titles and key phrases.
-- Use _italic_ for emphasis.
+- Use _italic* for emphasis.
 - Use \`code\` for technical terms.
 - **Do not include any external links.**
 - **Do not use**: \`---\`, \`**\`, or tables.
