@@ -2,6 +2,7 @@ import { Env } from './index';
 import { generateArticle, listModels } from './groq';
 import { sendTelegramMessage, getChatMemberCount, sendInlineKeyboardMessage, sendPhoto, editMessageText, deleteMessage } from './telegram';
 import { generateImage } from './image';
+import { translateText } from './translate';
 
 export async function handleUpdate(update: any, env: Env, ctx: ExecutionContext) {
     if (update.callback_query) {
@@ -98,6 +99,14 @@ Generate a Telegram post about: "${prompt}".
         return;
     }
 
+    const translate = await env.KV_B.get(`translate_${chat_id}`) || 'disabled';
+    let translatedContent = '';
+    if (translate === 'enabled') {
+        translatedContent = await translateText(articleResult.content, 'am', env);
+    }
+
+    const finalContent = translatedContent ? `${articleResult.content}\n\n---\n\n${translatedContent}` : articleResult.content;
+
     const targetChat = activeChannel || chat_id;
 
     if (imageGeneration === 'enabled') {
@@ -107,24 +116,24 @@ Generate a Telegram post about: "${prompt}".
         if (imagePromptResult.success) {
             const imageResult = await generateImage(imagePromptResult.content);
             if (imageResult.success && imageResult.imageUrl) {
-                if (await sendPhoto(targetChat, imageResult.imageUrl, articleResult.content, env)) {
+                if (await sendPhoto(targetChat, imageResult.imageUrl, finalContent, env)) {
                     if (activeChannel) {
                         await sendTelegramMessage(chat_id, `Article with image successfully posted to ${activeChannel}.`, env);
                     }
                 } else {
                     await editMessageText(chat_id, statusMessageId, 'Image generation failed. Posting without image...', env);
-                    await sendTelegramMessage(targetChat, articleResult.content, env);
+                    await sendTelegramMessage(targetChat, finalContent, env);
                 }
             } else {
                 await editMessageText(chat_id, statusMessageId, `Failed to generate image prompt: ${imagePromptResult.content}. Posting without image...`, env);
-                await sendTelegramMessage(targetChat, articleResult.content, env);
+                await sendTelegramMessage(targetChat, finalContent, env);
             }
         } else {
             await editMessageText(chat_id, statusMessageId, `Failed to generate image prompt: ${imagePromptResult.content}. Posting without image...`, env);
-            await sendTelegramMessage(targetChat, articleResult.content, env);
+            await sendTelegramMessage(targetChat, finalContent, env);
         }
     } else {
-        await sendTelegramMessage(targetChat, articleResult.content, env);
+        await sendTelegramMessage(targetChat, finalContent, env);
     }
 
     await deleteMessage(chat_id, statusMessageId, env);
@@ -173,6 +182,7 @@ async function handleSettings(chat_id: number, env: Env) {
     const keyboard = [
         [{ text: 'Model Settings', callback_data: 'model_settings' }],
         [{ text: 'Image Generation', callback_data: 'image_generation_settings' }],
+        [{ text: 'Translate to Amharic', callback_data: 'translate_settings' }],
         [{ text: 'Channel Management', callback_data: 'channel_management' }],
         [{ text: '⬅️ Back to Menu', callback_data: 'back_to_menu' }]
     ];
@@ -216,6 +226,12 @@ async function handleCallbackQuery(callbackQuery: any, env: Env, ctx: ExecutionC
         const imageGeneration = data.substring('set_image_generation:'.length);
         await env.KV_B.put(`image_generation_${chat_id}`, imageGeneration);
         await sendTelegramMessage(chat_id, `Image generation set to ${imageGeneration}.`, env);
+    } else if (data === 'translate_settings') {
+        await handleTranslateSettings(chat_id, env);
+    } else if (data.startsWith('set_translate:')) {
+        const translate = data.substring('set_translate:'.length);
+        await env.KV_B.put(`translate_${chat_id}`, translate);
+        await sendTelegramMessage(chat_id, `Translation set to ${translate}.`, env);
     } else if (data === 'schedule_management') {
         await handleScheduleManagement(chat_id, env);
     } else if (data === 'add_scheduled_topics') {
@@ -272,6 +288,16 @@ async function handleImageGenerationSettings(chat_id: number, env: Env) {
         [{ text: '⬅️ Back to Settings', callback_data: 'settings' }]
     ];
     await sendInlineKeyboardMessage(chat_id, 'Image Generation Settings:', keyboard, env);
+}
+
+async function handleTranslateSettings(chat_id: number, env: Env) {
+    const translate = await env.KV_B.get(`translate_${chat_id}`) || 'disabled';
+    const keyboard = [
+        [{ text: `Status: ${translate}`, callback_data: 'none' }],
+        [{ text: 'Enable', callback_data: 'set_translate:enabled' }, { text: 'Disable', callback_data: 'set_translate:disabled' }],
+        [{ text: '⬅️ Back to Settings', callback_data: 'settings' }]
+    ];
+    await sendInlineKeyboardMessage(chat_id, 'Translate to Amharic Settings:', keyboard, env);
 }
 
 async function handleModelSettings(chat_id: number, env: Env) {
