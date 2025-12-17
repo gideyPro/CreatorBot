@@ -6,18 +6,11 @@ interface TranslationResult {
 }
 
 export async function translateText(text: string, targetLanguage: string, env: Env): Promise<TranslationResult> {
-    const url = `https://libretranslate.com/translate`;
-    const payload = {
-        q: text,
-        source: 'auto',
-        target: targetLanguage,
-    };
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLanguage}&dt=t&q=${encodeURIComponent(text)}`;
 
     try {
         const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            method: 'GET',
         });
 
         if (!response.ok) {
@@ -28,10 +21,10 @@ export async function translateText(text: string, targetLanguage: string, env: E
         }
 
         const data = await response.json();
-        if (data.translatedText) {
-            return { success: true, content: data.translatedText };
+        if (data && data[0] && data[0][0] && data[0][0][0]) {
+            return { success: true, content: data[0][0][0] };
         } else {
-            const errorMessage = `Translation API returned no translations: ${JSON.stringify(data)}`;
+            const errorMessage = `Translation API returned an unexpected response format: ${JSON.stringify(data)}`;
             console.error(errorMessage);
             return { success: false, content: errorMessage };
         }
