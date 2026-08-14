@@ -11,6 +11,8 @@ export function escapeHtml(text: string): string {
 
 export function sanitizeHtml(text: string): string {
     let t = escapeHtml(text);
+    t = t.replace(/&lt;br\s*\/?&gt;/gi, '\n');
+    t = t.replace(/&lt;/?(p|li|ul|ol|blockquote|div|span)&gt;/gi, '\n');
     t = t.replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>');
     t = t.replace(/&lt;i&gt;/g, '<i>').replace(/&lt;\/i&gt;/g, '</i>');
     t = t.replace(/&lt;code&gt;/g, '<code>').replace(/&lt;\/code&gt;/g, '</code>');
@@ -53,7 +55,7 @@ export function convertMarkdownToHtml(text: string): string {
         .replace(/<ul>/g, '\n').replace(/<\/ul>/g, '\n')
         .replace(/<li>/g, '\n• ').replace(/<\/li>/g, '')
         .replace(/<p>/g, '\n').replace(/<\/p>/g, '\n')
-        .replace(/<br\s*\/?>/g, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
         .replace(/<a href="[^"]*">/g, '').replace(/<\/a>/g, '');
     return t;
 }
