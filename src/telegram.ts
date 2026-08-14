@@ -37,10 +37,25 @@ export function truncate(text: string, max: number, suffix = '…'): string {
 }
 
 export function convertMarkdownToHtml(text: string): string {
-    return text
+    let t = text
         .replace(/`([^`\n]+)`/g, '<code>$1</code>')
         .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
-        .replace(/\*([^*\n]+)\*/g, '<i>$1</i>');
+        .replace(/__([^_\n]+)__/g, '<b>$1</b>')
+        .replace(/\*([^*\n]+)\*/g, '<i>$1</i>')
+        .replace(/_([^_\n]+)_/g, '<i>$1</i>')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+    t = t.replace(/^#{1,6}\s+(.+)$/gm, '<b>$1</b>');
+    t = t.replace(/^\s*(---+|\*\*\*+|___+)\s*$/gm, '\n');
+    t = t
+        .replace(/<h[1-6]>/g, '<b>').replace(/<\/h[1-6]>/g, '</b>')
+        .replace(/<strong>/g, '<b>').replace(/<\/strong>/g, '</b>')
+        .replace(/<em>/g, '<i>').replace(/<\/em>/g, '</i>')
+        .replace(/<ul>/g, '\n').replace(/<\/ul>/g, '\n')
+        .replace(/<li>/g, '\n• ').replace(/<\/li>/g, '')
+        .replace(/<p>/g, '\n').replace(/<\/p>/g, '\n')
+        .replace(/<br\s*\/?>/g, '\n')
+        .replace(/<a href="[^"]*">/g, '').replace(/<\/a>/g, '');
+    return t;
 }
 
 export function closeOpenTags(text: string): string {
