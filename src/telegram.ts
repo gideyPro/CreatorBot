@@ -98,6 +98,15 @@ export async function sendPhotoSafe(chat_id: number | string, photoUrl: string, 
     return result?.message_id ?? null;
 }
 
+export async function sendPhotoPlain(chat_id: number | string, photoUrl: string, caption: string, env: Env): Promise<number | null> {
+    if (caption.length === 0) {
+        const result = await tgCall('sendPhoto', { chat_id, photo: photoUrl }, env);
+        return result?.message_id ?? null;
+    }
+    const result = await tgCall('sendPhoto', { chat_id, photo: photoUrl, caption }, env);
+    return result?.message_id ?? null;
+}
+
 export async function sendInlineKeyboardMessage(chat_id: number | string, text: string, keyboard: any, env: Env): Promise<number | null> {
     const result = await tgCall('sendMessage', { chat_id, text, parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } }, env);
     return result?.message_id ?? null;
@@ -116,6 +125,10 @@ export async function answerCallbackQuery(callbackQueryId: string, env: Env, tex
 export async function getChatMemberCount(chat_id: number | string, env: Env): Promise<number> {
     const result = await tgCall('getChatMemberCount', { chat_id }, env);
     return typeof result === 'number' ? result : -1;
+}
+
+export async function getChat(chat_id: number | string, env: Env): Promise<any> {
+    return await tgCall('getChat', { chat_id }, env);
 }
 
 export async function setMyCommands(env: Env): Promise<boolean> {

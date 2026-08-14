@@ -1,9 +1,9 @@
 import { Env } from './index';
 import { generateArticle, listModels } from './groq';
 import {
-    sendTelegramMessage, sendTelegramMessageSafe, getChatMemberCount, sendInlineKeyboardMessage,
-    sendPhotoSafe, editMessageText, deleteMessage, answerCallbackQuery, editMessageReplyMarkup,
-    sanitizeHtml, escapeHtml, truncate, splitText,
+    sendTelegramMessage, getChatMemberCount, sendInlineKeyboardMessage,
+    sendPhotoSafe, sendPhotoPlain, sendTelegramMessagePlain, editMessageText, deleteMessage,
+    answerCallbackQuery, editMessageReplyMarkup, getChat, escapeHtml, truncate, splitText,
 } from './telegram';
 import { generateImage } from './image';
 import { translateText } from './translate';
@@ -13,6 +13,27 @@ const MAX_CAPTION = 1000;
 const MAX_PREVIEW = 3000;
 const CHAT_MODEL_BLOCK = /whisper|speech|audio|stt|candy/i;
 const SCHEDULE_INTERVALS: Record<string, number> = { 4: 4, 8: 8, 12: 12, 24: 24 };
+
+async function channelHtml(ref: string, env: Env): Promise<string> {
+    const info = await getChat(ref, env);
+    const username = info?.username;
+    const title = info?.title || ref;
+    if (typeof username === 'string' && username.length > 0) {
+        return `<a href="https://t.me/${escapeHtml(username)}">${escapeHtml(title)}</a>`;
+    }
+    if (ref.startsWith('@') && ref.length > 1) {
+        const handle = ref.slice(1);
+        return `<a href="https://t.me/${escapeHtml(handle)}">● ${escapeHtml(handle)}</a>`;
+    }
+    return `<code>${escapeHtml(ref)}</code>`;
+}
+
+async function channelLabel(ref: string, env: Env): Promise<string> {
+    const info = await getChat(ref, env);
+    if (info?.title) return info.title;
+    if (ref.startsWith('@')) return ref;
+    return ref;
+}
 
 export async function handleUpdate(update: any, env: Env, ctx: ExecutionContext) {
     if (update.callback_query) {
@@ -132,13 +153,12 @@ export async function handleGenerate(chat_id: number, prompt: string, env: Env, 
 Generate a Telegram post about: "${prompt}".
 
 **Formatting Rules:**
-- Use Telegram-compatible HTML formatting ONLY.
-- Use <b>bold</b> for titles and key phrases.
-- Use <i>italic</i> for emphasis.
-- Use <code>code</code> for technical terms.
+- Write plain text only. No markdown, no HTML tags, no asterisks.
+- Use emojis and clear line breaks to make it engaging.
+- Short paragraphs. A bold-feeling title on the first line.
+- Hashtags at the end are allowed.
 - Do NOT include any external links.
-- Do NOT use markdown such as **, *, #, ---, or tables.
-- Use emojis to make it engaging.
+- Keep it under 1500 characters.
 `;
 
     const articleResult = await generateArticle(env.GROQ_API_KEY, formattedPrompt, selectedModel);
@@ -157,7 +177,7 @@ Generate a Telegram post about: "${prompt}".
         }
     }
 
-    finalContent = sanitizeHtml(finalContent);
+    finalContent = articleResult.content;
 
     let imageUrl: string | undefined;
     if (imageEnabled) {
@@ -182,7 +202,7 @@ Generate a Telegram post about: "${prompt}".
         if (ok) {
             await recordStat(activeChannel || chat_id, env);
             if (activeChannel) {
-                await sendTelegramMessage(chat_id, `✅ <b>Posted to ${escapeHtml(activeChannel)}.</b>`, env);
+                await sendTelegramMessage(chat_id, `✅ <b>Posted to ${await channelHtml(activeChannel, env)}.</b>`, env);
             }
         }
         return;
@@ -196,7 +216,7 @@ Generate a Telegram post about: "${prompt}".
     }
 
     const isLong = finalContent.length > MAX_PREVIEW;
-    const previewText = `<b>📝 Preview</b>\n\n${sanitizeHtml(truncate(finalContent, MAX_PREVIEW))}${isLong ? '\n\n<i>…(full content is staged for posting)</i>' : ''}`;
+    const previewText = `<b>📝 Preview</b>\n\n${escapeHtml(truncate(finalContent, MAX_PREVIEW))}${isLong ? '\n\n<i>…(full content is staged for posting)</i>' : ''}`;
     const keyboard = [
         [{ text: '✅ Post', callback_data: 'preview:post' }],
         [{ text: '🔄 Regenerate', callback_data: 'preview:regen' }],
@@ -211,20 +231,20 @@ async function postContent(chat_id: number, activeChannel: string | null, conten
     let sentAny = false;
 
     if (imageUrl) {
-        const caption = sanitizeHtml(truncate(content, MAX_CAPTION)) + (content.length > MAX_CAPTION ? '\n\n<i>…continued below</i>' : '');
-        const photoId = await sendPhotoSafe(target, imageUrl, caption, env);
+        const caption = truncate(content, MAX_CAPTION) + (content.length > MAX_CAPTION ? '\n\n…continued below' : '');
+        const photoId = await sendPhotoPlain(target, imageUrl, caption, env);
         if (photoId !== null) sentAny = true;
 
         if (content.length > MAX_CAPTION) {
             const rest = content.slice(MAX_CAPTION);
             for (const chunk of splitText(rest, MAX_TEXT)) {
-                const id = await sendTelegramMessageSafe(target, sanitizeHtml(chunk), env);
+                const id = await sendTelegramMessagePlain(target, chunk, env);
                 if (id !== null) sentAny = true;
             }
         }
     } else {
         for (const chunk of splitText(content, MAX_TEXT)) {
-            const id = await sendTelegramMessageSafe(target, sanitizeHtml(chunk), env);
+            const id = await sendTelegramMessagePlain(target, chunk, env);
             if (id !== null) sentAny = true;
         }
     }
@@ -252,7 +272,7 @@ async function onPreviewPost(chat_id: number, env: Env, cbId: string) {
     if (ok) {
         await recordStat(activeChannel || chat_id, env);
         const status = activeChannel
-            ? `✅ <b>Posted to ${escapeHtml(activeChannel)}.</b>`
+            ? `✅ <b>Posted to ${await channelHtml(activeChannel, env)}.</b>`
             : '✅ <b>Posted.</b> <i>Tip:</i> set an active channel in Channel Management to publish to your audience.';
         await answerCallbackQuery(cbId, env, 'Posted ✅');
         await sendTelegramMessage(chat_id, status, env);
@@ -333,7 +353,7 @@ async function handleStats(chat_id: number, env: Env) {
 
     const stats = `
 <b>📊 Statistics</b>
-<i>Target: ${escapeHtml(target)}</i>
+<i>Target: ${activeChannel ? await channelHtml(activeChannel, env) : `<code>${escapeHtml(target)}</code>`}</i>
 
 ${membersLine}
 📅 <b>Posts today:</b> ${today}
@@ -417,7 +437,7 @@ async function handleCallbackQuery(callbackQuery: any, env: Env, ctx: ExecutionC
     } else if (data.startsWith('set_active:')) {
         const channel = data.substring('set_active:'.length);
         await env.KV_B.put(`active_channel_${chat_id}`, channel);
-        await sendTelegramMessage(chat_id, `✅ <b>Active channel set to</b> ${escapeHtml(channel)}.`, env);
+        await sendTelegramMessage(chat_id, `✅ <b>Active channel set to</b> ${await channelHtml(channel, env)}.`, env);
         await handleChannelManagement(chat_id, env);
     } else if (data === 'image_generation_settings') {
         await handleImageGenerationSettings(chat_id, env);
@@ -491,7 +511,7 @@ async function confirmRemoveChannel(chat_id: number, channel: string, env: Env) 
         [{ text: '🗑 Yes, remove it', callback_data: `confirm_remove:${channel}` }],
         [{ text: '⬅️ Back', callback_data: 'channel_management' }]
     ];
-    await sendInlineKeyboardMessage(chat_id, `⚠️ <b>Remove channel ${escapeHtml(channel)}?</b>`, keyboard, env);
+    await sendInlineKeyboardMessage(chat_id, `⚠️ <b>Remove channel ${await channelHtml(channel, env)}?</b>`, keyboard, env);
 }
 
 async function handleViewScheduledTopics(chat_id: number, env: Env) {
@@ -589,14 +609,18 @@ async function handleChannelManagement(chat_id: number, env: Env) {
     let message = `
 <b>📺 Channel Management</b>
 
-<b>Active Channel:</b> <code>${escapeHtml(activeChannel)}</code>
+<b>Active Channel:</b> ${activeChannel === 'Not set' ? 'Not set' : await channelHtml(activeChannel, env)}
 
 <b>Registered Channels:</b>
 `;
     if (channels.length === 0) {
         message += '\n<i>No channels yet. Tap <b>Add a Channel</b> and send me <code>@handle</code> or a numeric id.</i>';
     } else {
-        message += channels.map(channel => ` • ${escapeHtml(channel)}`).join('\n');
+        const lines: string[] = [];
+        for (const channel of channels) {
+            lines.push(` • ${await channelHtml(channel, env)}`);
+        }
+        message += lines.join('\n');
     }
 
     const keyboard: any = [];
@@ -618,9 +642,9 @@ async function handleAddChannel(chat_id: number, channel: string, env: Env) {
         if (!channels.includes(channel)) {
             channels.push(channel);
             await env.KV_B.put(`channels_${chat_id}`, JSON.stringify(channels));
-            await sendTelegramMessage(chat_id, `✅ <b>Channel ${escapeHtml(channel)} added.</b>`, env);
+            await sendTelegramMessage(chat_id, `✅ <b>Channel ${await channelHtml(channel, env)} added.</b>`, env);
         } else {
-            await sendTelegramMessage(chat_id, `ℹ️ <b>${escapeHtml(channel)}</b> is already registered.`, env);
+            await sendTelegramMessage(chat_id, `ℹ️ <b>${await channelHtml(channel, env)}</b> is already registered.`, env);
         }
     } else {
         await sendTelegramMessage(chat_id, '⚠️ Invalid channel format. Use <code>@channel_id</code> or a numeric id like <code>-100…</code>.', env);
@@ -637,17 +661,20 @@ async function handleRemoveChannel(chat_id: number, channelToRemove: string, env
         await env.KV_B.delete(`active_channel_${chat_id}`);
     }
 
-    await sendTelegramMessage(chat_id, `🗑 <b>${escapeHtml(channelToRemove)}</b> removed.`, env);
+    await sendTelegramMessage(chat_id, `🗑 <b>${await channelHtml(channelToRemove, env)}</b> removed.`, env);
     await handleChannelManagement(chat_id, env);
 }
 
 async function handleSetActiveChannel(chat_id: number, env: Env) {
     const channels: string[] = await env.KV_B.get(`channels_${chat_id}`, 'json') || [];
     if (channels.length > 0) {
-        const keyboard = channels.map(channel => ([{
-            text: `✅ ${channel}`,
-            callback_data: `set_active:${channel}`,
-        }]));
+        const keyboard: any[] = [];
+        for (const channel of channels) {
+            keyboard.push([{
+                text: `✅ ${await channelLabel(channel, env)}`,
+                callback_data: `set_active:${channel}`,
+            }]);
+        }
         keyboard.push([{ text: '⬅️ Back to Channels', callback_data: 'channel_management' }]);
         await sendInlineKeyboardMessage(chat_id, 'Please select an active channel:', keyboard, env);
     } else {
