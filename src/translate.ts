@@ -1,5 +1,3 @@
-import { Env } from './index';
-
 interface TranslationResult {
     success: boolean;
     content: string;

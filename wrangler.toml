@@ -4,15 +4,29 @@ compatibility_date = "2024-01-01"
 workers_dev = true
 
 [triggers]
-crons = ["0 */8 * * *"]
+crons = ["0 * * * *"]
 
 # =========================================================
 # KV BINDING: This connects the KV Namespace to your Worker
 # =========================================================
 [[kv_namespaces]]
-# The 'binding' is the name your Worker code uses (env.KV_BINDING)
+# The 'binding' is the name your Worker code uses (env.KV_B)
 binding = "KV_B"
 # The 'id' is the unique ID for your KV Namespace
 id = "59ff4573092e4901b72f53d96d999aef"
 
+# =========================================================
+# D1 BINDING (OPTIONAL): Enables deeper stats (posts today/total)
+# 1. Create a DB:  npx wrangler d1 create creatorbot_stats
+# 2. Paste the database_id below and uncomment
+# 3. Apply schema: npx wrangler d1 execute creatorbot_stats --remote --file=./schema.sql
+# If you skip D1, the bot falls back to lightweight KV counters automatically.
+# =========================================================
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "creatorbot_stats"
+# database_id = "<YOUR_DATABASE_ID>"
+
 # Note: The BOT_TOKEN and GROQ_API_KEY must be set as Secrets in the Cloudflare dashboard.
+#   npx wrangler secret put BOT_TOKEN
+#   npx wrangler secret put GROQ_API_KEY
