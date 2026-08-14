@@ -7,14 +7,13 @@ A free, AI-powered Telegram bot on Cloudflare Workers that generates posts, imag
 - `/generate <topic>` — AI posts with a **preview step** before publishing (Post / Regenerate / New topic / Cancel)
 - **Automatic publishing** to your channel on a schedule (4h / 8h / 12h / 24h, with jitter)
 - **Image generation** (free → uses Pollinations.ai) or text-only mode
-- Optional **Amharic translation** of generated posts
 - **Channel management**: register, remove, and switch the active channel
 - **Stats**: members, posts today/total, queue size (D1-backed, falls back to KV)
 - Model picker, `/cancel`, `/help`, command hints, inline-button navigation
 
 ## Costs
 
-Everything runs on Cloudflare's free Workers plan plus free external APIs (Groq, Pollinations, Google Translate). The only paid-cost risk is if you exceed free-tier limits (10ms CPU, 100K req/day). Scheduled posts are pure API calls, so they use almost no CPU.
+Everything runs on Cloudflare's free Workers plan plus free external APIs (Groq, Pollinations). The only paid-cost risk is if you exceed free-tier limits (10ms CPU, 100K req/day). Scheduled posts are pure API calls, so they use almost no CPU.
 
 ## Setup
 

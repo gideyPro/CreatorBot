@@ -7,7 +7,6 @@ import {
     sanitizeHtml, convertMarkdownToHtml, cleanTruncated,
 } from './telegram';
 import { generateImage } from './image';
-import { translateText } from './translate';
 
 const MAX_TEXT = 4000;
 const MAX_CAPTION = 1000;
@@ -123,7 +122,7 @@ async function handleHelp(chat_id: number, env: Env) {
 <b>/generate &lt;topic&gt;</b> — Generate a post
 <b>/addchannel &lt;@handle&gt;</b> — Add a channel to post to
 <b>/stats</b> — Channel stats
-<b>/settings</b> — Model, image &amp; translation options
+<b>/settings</b> — Model &amp; image options
 <b>/cancel</b> — Stop the current action
 
 💡 <i>Tip:</i> you can also tap the buttons in the main menu.
@@ -148,7 +147,6 @@ export async function handleGenerate(chat_id: number, prompt: string, env: Env, 
     const selectedModel = await env.KV_B.get(`model_${chat_id}`) || 'llama3-8b-8192';
     const activeChannel: string | null = await env.KV_B.get(`active_channel_${chat_id}`);
     const imageEnabled = (await env.KV_B.get(`image_generation_${chat_id}`) || 'enabled') === 'enabled';
-    const translate = await env.KV_B.get(`translate_${chat_id}`) || 'disabled';
 
     const formattedPrompt = `
 Generate a Telegram post about: "${prompt}".
@@ -171,17 +169,7 @@ Generate a Telegram post about: "${prompt}".
         return;
     }
 
-    let finalContent = articleResult.content;
-    if (translate === 'enabled') {
-        const translationResult = await translateText(finalContent, 'am', env);
-        if (translationResult.success) {
-            finalContent = translationResult.content;
-        } else {
-            await sendTelegramMessage(chat_id, `⚠️ Translation failed: <code>${escapeHtml(translationResult.content)}</code>`, env);
-        }
-    }
-
-    finalContent = sanitizeHtml(convertMarkdownToHtml(finalContent));
+    let finalContent = sanitizeHtml(convertMarkdownToHtml(articleResult.content));
 
     let imageUrl: string | undefined;
     if (imageEnabled) {
@@ -398,7 +386,6 @@ async function handleSettings(chat_id: number, env: Env) {
     const keyboard = [
         [{ text: '🧠 Model Settings', callback_data: 'model_settings' }],
         [{ text: '🖼 Image Generation', callback_data: 'image_generation_settings' }],
-        [{ text: '🌐 Translate to Amharic', callback_data: 'translate_settings' }],
         [{ text: '📺 Channel Management', callback_data: 'channel_management' }],
         [{ text: '⬅️ Back to Menu', callback_data: 'menu:dashboard' }]
     ];
@@ -450,12 +437,6 @@ async function handleCallbackQuery(callbackQuery: any, env: Env, ctx: ExecutionC
         const imageGeneration = data.substring('set_image_generation:'.length);
         await env.KV_B.put(`image_generation_${chat_id}`, imageGeneration);
         await handleImageGenerationSettings(chat_id, env);
-    } else if (data === 'translate_settings') {
-        await handleTranslateSettings(chat_id, env);
-    } else if (data.startsWith('set_translate:')) {
-        const translate = data.substring('set_translate:'.length);
-        await env.KV_B.put(`translate_${chat_id}`, translate);
-        await handleTranslateSettings(chat_id, env);
     } else if (data === 'schedule_management') {
         await handleScheduleManagement(chat_id, env);
     } else if (data === 'add_scheduled_topics') {
@@ -495,7 +476,6 @@ async function openMenu(chat_id: number, menu: string, env: Env) {
         case 'settings': return handleSettings(chat_id, env);
         case 'model': return handleModelSettings(chat_id, env);
         case 'image': return handleImageGenerationSettings(chat_id, env);
-        case 'translate': return handleTranslateSettings(chat_id, env);
         case 'schedule': return handleScheduleManagement(chat_id, env);
         case 'channel': return handleChannelManagement(chat_id, env);
         case 'stats': return handleStats(chat_id, env);
@@ -571,21 +551,6 @@ When enabled, every post includes an AI-generated image.
 `;
     const keyboard = [
         [{ text: '✅ Enable', callback_data: 'set_image_generation:enabled' }, { text: '🚫 Disable', callback_data: 'set_image_generation:disabled' }],
-        [{ text: '⬅️ Back to Settings', callback_data: 'menu:settings' }]
-    ];
-    await sendInlineKeyboardMessage(chat_id, message, keyboard, env);
-}
-
-async function handleTranslateSettings(chat_id: number, env: Env) {
-    const translate = await env.KV_B.get(`translate_${chat_id}`) || 'disabled';
-    const message = `
-<b>🌐 Translate to Amharic</b>
-
-<b>Status:</b> <code>${translate}</code>
-When enabled, generated posts are translated before publishing.
-`;
-    const keyboard = [
-        [{ text: '✅ Enable', callback_data: 'set_translate:enabled' }, { text: '🚫 Disable', callback_data: 'set_translate:disabled' }],
         [{ text: '⬅️ Back to Settings', callback_data: 'menu:settings' }]
     ];
     await sendInlineKeyboardMessage(chat_id, message, keyboard, env);
