@@ -1,9 +1,10 @@
 import { Env } from './index';
 import { generateArticle, listModels } from './groq';
 import {
-    sendTelegramMessage, getChatMemberCount, sendInlineKeyboardMessage,
-    sendPhotoSafe, sendPhotoPlain, sendTelegramMessagePlain, editMessageText, deleteMessage,
+    sendTelegramMessage, getChatMemberCount, sendInlineKeyboardMessage, sendInlineKeyboardMessageSafe,
+    sendPhotoSafe, sendTelegramMessageSafe, editMessageText, deleteMessage,
     answerCallbackQuery, editMessageReplyMarkup, getChat, escapeHtml, truncate, splitText,
+    sanitizeHtml, convertMarkdownToHtml, cleanTruncated,
 } from './telegram';
 import { generateImage } from './image';
 import { translateText } from './translate';
@@ -153,11 +154,14 @@ export async function handleGenerate(chat_id: number, prompt: string, env: Env, 
 Generate a Telegram post about: "${prompt}".
 
 **Formatting Rules:**
-- Write plain text only. No markdown, no HTML tags, no asterisks.
-- Use emojis and clear line breaks to make it engaging.
-- Short paragraphs. A bold-feeling title on the first line.
-- Hashtags at the end are allowed.
+- Use Telegram-compatible HTML formatting.
+- Use <b>bold</b> for titles and key phrases.
+- Use <i>italic</i> for emphasis.
+- Use <code>code</code> for technical terms.
+- ALWAYS close every tag you open (example: <b>bold</b>).
+- Do NOT use markdown like **, #, or ---. Only the HTML tags above.
 - Do NOT include any external links.
+- Use emojis to make it engaging.
 - Keep it under 1500 characters.
 `;
 
@@ -177,7 +181,7 @@ Generate a Telegram post about: "${prompt}".
         }
     }
 
-    finalContent = articleResult.content;
+    finalContent = sanitizeHtml(convertMarkdownToHtml(finalContent));
 
     let imageUrl: string | undefined;
     if (imageEnabled) {
@@ -216,14 +220,14 @@ Generate a Telegram post about: "${prompt}".
     }
 
     const isLong = finalContent.length > MAX_PREVIEW;
-    const previewText = `<b>📝 Preview</b>\n\n${escapeHtml(truncate(finalContent, MAX_PREVIEW))}${isLong ? '\n\n<i>…(full content is staged for posting)</i>' : ''}`;
+    const previewText = `<b>📝 Preview</b>\n\n${cleanTruncated(truncate(finalContent, MAX_PREVIEW))}${isLong ? '\n\n<i>…(full content is staged for posting)</i>' : ''}`;
     const keyboard = [
         [{ text: '✅ Post', callback_data: 'preview:post' }],
         [{ text: '🔄 Regenerate', callback_data: 'preview:regen' }],
         [{ text: '📝 New topic', callback_data: 'preview:new' }],
         [{ text: '🚫 Cancel', callback_data: 'preview:discard' }],
     ];
-    await sendInlineKeyboardMessage(chat_id, previewText, keyboard, env);
+    await sendInlineKeyboardMessageSafe(chat_id, previewText, keyboard, env);
 }
 
 async function postContent(chat_id: number, activeChannel: string | null, content: string, imageUrl: string | undefined, env: Env): Promise<boolean> {
@@ -231,20 +235,21 @@ async function postContent(chat_id: number, activeChannel: string | null, conten
     let sentAny = false;
 
     if (imageUrl) {
-        const caption = truncate(content, MAX_CAPTION) + (content.length > MAX_CAPTION ? '\n\n…continued below' : '');
-        const photoId = await sendPhotoPlain(target, imageUrl, caption, env);
+        const truncated = truncate(content, MAX_CAPTION);
+        const caption = cleanTruncated(truncated) + (content.length > MAX_CAPTION ? '\n\n…continued below' : '');
+        const photoId = await sendPhotoSafe(target, imageUrl, caption, env);
         if (photoId !== null) sentAny = true;
 
         if (content.length > MAX_CAPTION) {
             const rest = content.slice(MAX_CAPTION);
             for (const chunk of splitText(rest, MAX_TEXT)) {
-                const id = await sendTelegramMessagePlain(target, chunk, env);
+                const id = await sendTelegramMessageSafe(target, cleanTruncated(chunk), env);
                 if (id !== null) sentAny = true;
             }
         }
     } else {
         for (const chunk of splitText(content, MAX_TEXT)) {
-            const id = await sendTelegramMessagePlain(target, chunk, env);
+            const id = await sendTelegramMessageSafe(target, cleanTruncated(chunk), env);
             if (id !== null) sentAny = true;
         }
     }

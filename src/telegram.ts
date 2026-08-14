@@ -36,6 +36,34 @@ export function truncate(text: string, max: number, suffix = '…'): string {
     return text.slice(0, max - suffix.length) + suffix;
 }
 
+export function convertMarkdownToHtml(text: string): string {
+    return text
+        .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+        .replace(/\*([^*\n]+)\*/g, '<i>$1</i>');
+}
+
+export function closeOpenTags(text: string): string {
+    let out = text;
+    out = out.replace(/<[a-zA-Z\/]*$/, '');
+    const pairs: Array<[string, string]> = [
+        ['b', '</b>'],
+        ['i', '</i>'],
+        ['code', '</code>'],
+    ];
+    for (const [open, close] of pairs) {
+        const opens = (out.match(new RegExp(`<${open}>`, 'g')) || []).length;
+        const closes = (out.match(new RegExp(`</${open}>`, 'g')) || []).length;
+        const diff = opens - closes;
+        if (diff > 0) out += close.repeat(diff);
+    }
+    return out;
+}
+
+export function cleanTruncated(text: string): string {
+    return closeOpenTags(text);
+}
+
 async function tgCall(method: string, payload: any, env: Env): Promise<any> {
     const url = `${TG_URL}${env.BOT_TOKEN}/${method}`;
     try {
@@ -109,6 +137,13 @@ export async function sendPhotoPlain(chat_id: number | string, photoUrl: string,
 
 export async function sendInlineKeyboardMessage(chat_id: number | string, text: string, keyboard: any, env: Env): Promise<number | null> {
     const result = await tgCall('sendMessage', { chat_id, text, parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } }, env);
+    return result?.message_id ?? null;
+}
+
+export async function sendInlineKeyboardMessageSafe(chat_id: number | string, text: string, keyboard: any, env: Env): Promise<number | null> {
+    const id = await sendInlineKeyboardMessage(chat_id, text, keyboard, env);
+    if (id !== null) return id;
+    const result = await tgCall('sendMessage', { chat_id, text, reply_markup: { inline_keyboard: keyboard } }, env);
     return result?.message_id ?? null;
 }
 
