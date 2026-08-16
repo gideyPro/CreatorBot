@@ -7,6 +7,9 @@ import {
     sanitizeHtml, convertMarkdownToHtml, cleanTruncated,
 } from './telegram';
 import { generateImage } from './image';
+import {
+    handleYoutube, handleYoutubeCallback, handleYoutubeGenerate, queueYoutubeJob, setYtTextSetting,
+} from './youtube';
 
 const MAX_TEXT = 4000;
 const MAX_CAPTION = 1000;
@@ -64,6 +67,9 @@ export async function handleUpdate(update: any, env: Env, ctx: ExecutionContext)
                 case '/settings':
                     await handleSettings(chat_id, env);
                     break;
+                case '/youtube':
+                    await handleYoutube(chat_id, env);
+                    break;
                 case '/addchannel':
                     await handleAddChannel(chat_id, args, env);
                     break;
@@ -103,6 +109,19 @@ async function handleMessage(chat_id: number, text: string, env: Env) {
     } else if (userState === 'awaiting_channel') {
         await env.KV_B.delete(`user_state_${chat_id}`);
         await handleAddChannel(chat_id, text, env);
+    } else if (userState === 'awaiting_yt_topic') {
+        await env.KV_B.delete(`user_state_${chat_id}`);
+        await queueYoutubeJob(chat_id, text, env);
+    } else if (userState === 'awaiting_yt_prefix') {
+        await env.KV_B.delete(`user_state_${chat_id}`);
+        await setYtTextSetting(chat_id, 'titlePrefix', text, env);
+        await sendTelegramMessage(chat_id, `🏷 <b>Title prefix set</b> to <code>${escapeHtml(text)}</code>.`, env);
+        await handleYoutube(chat_id, env);
+    } else if (userState === 'awaiting_yt_tags') {
+        await env.KV_B.delete(`user_state_${chat_id}`);
+        await setYtTextSetting(chat_id, 'tags', text, env);
+        await sendTelegramMessage(chat_id, `#️⃣ <b>Tags set</b> to <code>${escapeHtml(text)}</code>.`, env);
+        await handleYoutube(chat_id, env);
     } else if (text.startsWith('@') || /^-100\d+$/.test(text.trim())) {
         await handleAddChannel(chat_id, text.trim(), env);
     }
@@ -121,6 +140,7 @@ async function handleHelp(chat_id: number, env: Env) {
 
 <b>/generate &lt;topic&gt;</b> — Generate a post
 <b>/addchannel &lt;@handle&gt;</b> — Add a channel to post to
+<b>/youtube</b> — Generate &amp; upload YouTube videos
 <b>/stats</b> — Channel stats
 <b>/settings</b> — Model &amp; image options
 <b>/cancel</b> — Stop the current action
@@ -135,14 +155,14 @@ async function handleGenerateArticle(chat_id: number, env: Env) {
     await sendTelegramMessage(chat_id, '✍️ <b>Send me the topic</b> for your post (or <b>/cancel</b> to stop).', env);
 }
 
-export async function handleGenerate(chat_id: number, prompt: string, env: Env, direct: boolean = false) {
+export async function handleGenerate(chat_id: number, prompt: string, env: Env, direct: boolean = false): Promise<boolean> {
     if (!prompt) {
         await sendTelegramMessage(chat_id, '⚠️ Please provide a prompt after <b>/generate</b>.', env);
-        return;
+        return false;
     }
 
     const statusMessageId = await sendTelegramMessage(chat_id, '⏳ <i>Generating article…</i>', env);
-    if (!statusMessageId) return;
+    if (!statusMessageId) return false;
 
     const selectedModel = await env.KV_B.get(`model_${chat_id}`) || 'llama3-8b-8192';
     const activeChannel: string | null = await env.KV_B.get(`active_channel_${chat_id}`);
@@ -166,7 +186,7 @@ Generate a Telegram post about: "${prompt}".
     const articleResult = await generateArticle(env.GROQ_API_KEY, formattedPrompt, selectedModel);
     if (!articleResult.success) {
         await editMessageText(chat_id, statusMessageId, `❌ <b>Generation failed</b>\n\n<code>${escapeHtml(truncate(articleResult.content, 800))}</code>`, env);
-        return;
+        return false;
     }
 
     let finalContent = sanitizeHtml(convertMarkdownToHtml(articleResult.content));
@@ -197,7 +217,7 @@ Generate a Telegram post about: "${prompt}".
                 await sendTelegramMessage(chat_id, `✅ <b>Posted to ${await channelHtml(activeChannel, env)}.</b>`, env);
             }
         }
-        return;
+        return ok;
     }
 
     await env.KV_B.put(`pending_post_${chat_id}`, JSON.stringify({ content: finalContent, imageUrl: imageUrl || '', topic: prompt }));
@@ -216,6 +236,7 @@ Generate a Telegram post about: "${prompt}".
         [{ text: '🚫 Cancel', callback_data: 'preview:discard' }],
     ];
     await sendInlineKeyboardMessageSafe(chat_id, previewText, keyboard, env);
+    return true;
 }
 
 async function postContent(chat_id: number, activeChannel: string | null, content: string, imageUrl: string | undefined, env: Env): Promise<boolean> {
@@ -377,6 +398,7 @@ I generate posts, images and help you manage your Telegram channels automaticall
         [{ text: '📊 Statistics', callback_data: 'stats' }],
         [{ text: '🗓 Schedule Management', callback_data: 'schedule_management' }],
         [{ text: '📺 Channel Management', callback_data: 'channel_management' }],
+        [{ text: '📺 YouTube Studio', callback_data: 'youtube:menu' }],
         [{ text: '⚙️ Settings', callback_data: 'settings' }],
     ];
     await sendInlineKeyboardMessage(chat_id, welcomeMessage, keyboard, env);
@@ -468,6 +490,8 @@ async function handleCallbackQuery(callbackQuery: any, env: Env, ctx: ExecutionC
         await onPreviewNew(chat_id, env, cbId);
     } else if (data === 'preview:discard') {
         await onPreviewDiscard(chat_id, env, cbId);
+    } else if (data.startsWith('youtube:')) {
+        await handleYoutubeCallback(chat_id, data.substring('youtube:'.length), env);
     }
 }
 

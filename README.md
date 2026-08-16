@@ -9,6 +9,7 @@ A free, AI-powered Telegram bot on Cloudflare Workers that generates posts, imag
 - **Image generation** (free → uses Pollinations.ai) or text-only mode
 - **Channel management**: register, remove, and switch the active channel
 - **Stats**: members, posts today/total, queue size (D1-backed, falls back to KV)
+- **YouTube Studio**: queue videos from the bot; a local pipeline renders them (Groq script + Pollinations images + edge-tts narration + ffmpeg) and uploads to your YouTube channel (see `youtube/README.md`)
 - Model picker, `/cancel`, `/help`, command hints, inline-button navigation
 
 ## Costs
@@ -56,9 +57,14 @@ Everything runs on Cloudflare's free Workers plan plus free external APIs (Groq,
 
 - `/generate <topic>`
 - `/addchannel <@handle>`
+- `/youtube` — generate & upload YouTube videos
 - `/stats`
 - `/settings`
 - `/cancel`
 - `/help`
 
 To post to a channel, add the bot as an **admin** of that channel first.
+
+## YouTube videos
+
+The bot queues video jobs in KV; rendering + upload run in a **local pipeline** on your machine (Cloudflare Workers can't run ffmpeg). See [`youtube/README.md`](youtube/README.md) for setup.

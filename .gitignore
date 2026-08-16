@@ -1,1 +1,4 @@
 node_modules/
+youtube/.env
+youtube/tokens.json
+youtube/out/

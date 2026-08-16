@@ -12,7 +12,7 @@ export function escapeHtml(text: string): string {
 export function sanitizeHtml(text: string): string {
     let t = escapeHtml(text);
     t = t.replace(/&lt;br\s*\/?&gt;/gi, '\n');
-    t = t.replace(/&lt;/?(p|li|ul|ol|blockquote|div|span)&gt;/gi, '\n');
+    t = t.replace(/&lt;\/?(p|li|ul|ol|blockquote|div|span)&gt;/gi, '\n');
     t = t.replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>');
     t = t.replace(/&lt;i&gt;/g, '<i>').replace(/&lt;\/i&gt;/g, '</i>');
     t = t.replace(/&lt;code&gt;/g, '<code>').replace(/&lt;\/code&gt;/g, '</code>');
@@ -189,6 +189,7 @@ export async function setMyCommands(env: Env): Promise<boolean> {
         { command: 'stats', description: 'View channel stats' },
         { command: 'settings', description: 'Open settings' },
         { command: 'addchannel', description: 'Add a channel' },
+        { command: 'youtube', description: 'Generate & upload YouTube videos' },
         { command: 'cancel', description: 'Cancel current action' },
         { command: 'help', description: 'Show help' },
     ];

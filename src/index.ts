@@ -28,6 +28,16 @@ async function registerCommandsOnce(env: Env) {
     await env.KV_B.put('commands_registered', 'true');
 }
 
+async function safeJsonList(env: Env, key: string): Promise<string[]> {
+    try {
+        const val = await env.KV_B.get(key, 'json');
+        return Array.isArray(val) ? val : [];
+    } catch (e) {
+        console.error(`Failed to read KV list for ${key}:`, e);
+        return [];
+    }
+}
+
 export default {
     async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
         return router.handle(request, env, ctx);
@@ -36,30 +46,41 @@ export default {
         await ensureStatsTable(env);
         await registerCommandsOnce(env);
 
-        const users: string[] = await env.KV_B.get('users', 'json') || [];
+        const users = await safeJsonList(env, 'users');
+        if (users.length === 0) return;
         const now = Date.now();
 
         for (const user of users) {
-            const scheduleStatus = await env.KV_B.get(`schedule_status_${user}`) || 'active';
-            if (scheduleStatus !== 'active') continue;
+            try {
+                const scheduleStatus = await env.KV_B.get(`schedule_status_${user}`) || 'active';
+                if (scheduleStatus !== 'active') continue;
 
-            const activeChannel = await env.KV_B.get(`active_channel_${user}`);
-            if (!activeChannel) continue;
+                const activeChannel = await env.KV_B.get(`active_channel_${user}`);
+                if (!activeChannel) continue;
 
-            const topics: string[] = await env.KV_B.get(`scheduled_topics_${user}`, 'json') || [];
-            if (topics.length === 0) continue;
+                const topics = await safeJsonList(env, `scheduled_topics_${user}`);
+                if (topics.length === 0) continue;
 
-            const nextAt = Number(await env.KV_B.get(`next_post_at_${user}`)) || now;
-            if (now < nextAt) continue;
+                const intervalHours = Number(await env.KV_B.get(`post_interval_hours_${user}`)) || 8;
 
-            const intervalHours = Number(await env.KV_B.get(`post_interval_hours_${user}`)) || 8;
-            const topic = topics.shift();
-            await env.KV_B.put(`scheduled_topics_${user}`, JSON.stringify(topics));
+                const rawNext = await env.KV_B.get(`next_post_at_${user}`);
+                const nextAt = rawNext === null
+                    ? now + intervalHours * 3600 * 1000 + Math.floor(Math.random() * 60 * 60 * 1000)
+                    : Number(rawNext) || now;
+                if (now < nextAt) continue;
 
-            await handleGenerate(parseInt(user), topic, env, true);
+                const topic = topics[0];
+                const posted = await handleGenerate(parseInt(user), topic, env, true);
+                if (!posted) continue;
 
-            const jitter = Math.floor(Math.random() * 60 * 60 * 1000);
-            await env.KV_B.put(`next_post_at_${user}`, String(Date.now() + intervalHours * 3600 * 1000 + jitter));
+                topics.shift();
+                await env.KV_B.put(`scheduled_topics_${user}`, JSON.stringify(topics));
+
+                const jitter = Math.floor(Math.random() * 60 * 60 * 1000);
+                await env.KV_B.put(`next_post_at_${user}`, String(Date.now() + intervalHours * 3600 * 1000 + jitter));
+            } catch (e) {
+                console.error(`Scheduled post failed for user ${user}:`, e);
+            }
         }
     }
 };
@@ -69,7 +90,7 @@ router.post('/webhook', async (request: Request, env: Env, ctx: ExecutionContext
         const update = await request.json<any>();
         const chat_id = update.message?.chat?.id || update.callback_query?.message?.chat?.id || update.channel_post?.chat?.id;
         if (chat_id) {
-            let users: string[] = await env.KV_B.get('users', 'json') || [];
+            const users = await safeJsonList(env, 'users');
             if (!users.includes(chat_id.toString())) {
                 users.push(chat_id.toString());
                 await env.KV_B.put('users', JSON.stringify(users));

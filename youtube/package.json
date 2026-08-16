@@ -1,0 +1,13 @@
+{
+  "name": "creatorbot-youtube",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local render + upload pipeline for CreatorBot YouTube jobs",
+  "scripts": {
+    "oauth": "node oauth.mjs",
+    "render": "node render.mjs",
+    "pipeline": "node pipeline.mjs",
+    "pipeline:once": "node pipeline.mjs --once"
+  }
+}
