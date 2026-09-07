@@ -10,6 +10,10 @@ import { generateImage } from './image';
 import {
     handleYoutube, handleYoutubeCallback, handleYoutubeGenerate, queueYoutubeJob, setYtTextSetting,
 } from './youtube';
+import { createGoal, getActiveGoal, getGoalProgress, pauseGoal, resumeGoal } from './goals';
+import { generateWeeklyPlan, formatWeeklyPlan } from './planner';
+import { recordPostMetric } from './analytics';
+import { handleWeeklyReview } from './agent';
 
 const MAX_TEXT = 4000;
 const MAX_CAPTION = 1000;
@@ -79,6 +83,18 @@ export async function handleUpdate(update: any, env: Env, ctx: ExecutionContext)
                 case '/help':
                     await handleHelp(chat_id, env);
                     break;
+                case '/goal':
+                    await handleGoalCommand(chat_id, args, env);
+                    break;
+                case '/plan':
+                    await handlePlanCommand(chat_id, env);
+                    break;
+                case '/report':
+                    await handleReportCommand(chat_id, env);
+                    break;
+                case '/agent':
+                    await handleAgentCommand(chat_id, args, env);
+                    break;
                 default:
                     await sendTelegramMessage(chat_id, 'Unknown command. Try <b>/generate &lt;topic&gt;</b>, <b>/stats</b>, or <b>/help</b>.', env);
                     break;
@@ -122,6 +138,9 @@ async function handleMessage(chat_id: number, text: string, env: Env) {
         await setYtTextSetting(chat_id, 'tags', text, env);
         await sendTelegramMessage(chat_id, `#️⃣ <b>Tags set</b> to <code>${escapeHtml(text)}</code>.`, env);
         await handleYoutube(chat_id, env);
+    } else if (userState === 'awaiting_goal') {
+        await env.KV_B.delete(`user_state_${chat_id}`);
+        await handleGoalCommand(chat_id, text, env);
     } else if (text.startsWith('@') || /^-100\d+$/.test(text.trim())) {
         await handleAddChannel(chat_id, text.trim(), env);
     }
@@ -143,6 +162,10 @@ async function handleHelp(chat_id: number, env: Env) {
 <b>/youtube</b> — Generate &amp; upload YouTube videos
 <b>/stats</b> — Channel stats
 <b>/settings</b> — Model &amp; image options
+<b>/goal &lt;text&gt;</b> — Set a growth goal
+<b>/plan</b> — View current weekly plan
+<b>/report</b> — Get performance report
+<b>/agent on|off</b> — Toggle autonomous mode
 <b>/cancel</b> — Stop the current action
 
 💡 <i>Tip:</i> you can also tap the buttons in the main menu.
@@ -388,13 +411,35 @@ async function handleStart(chat_id: number, env: Env) {
 }
 
 async function sendDashboard(chat_id: number, env: Env) {
+    const agentMode = await env.KV_B.get(`agent_mode_${chat_id}`);
+    const activeChannel = await env.KV_B.get(`active_channel_${chat_id}`);
+
+    let agentStatus = 'OFF ⚪';
+    let goalLine = '';
+
+    if (agentMode === 'active') {
+        agentStatus = 'ON 🟢';
+        if (activeChannel) {
+            const progress = await getGoalProgress(activeChannel, env);
+            if (progress.goal) {
+                const trackEmoji = progress.onTrack ? '✅' : '⚠️';
+                goalLine = `\n🎯 <b>Goal:</b> ${progress.goal.target_subscribers} subs in ${progress.goal.target_days}d`;
+                goalLine += `\n📈 <b>Progress:</b> ${progress.percentComplete}% ${trackEmoji}`;
+                goalLine += `\n⏱ <b>Day ${progress.daysElapsed}/${progress.goal.target_days}</b>`;
+            }
+        }
+    }
+
     const welcomeMessage = `
 <b>Welcome to the Creator Bot! 🚀</b>
 
 I generate posts, images and help you manage your Telegram channels automatically.
+
+🤖 <b>Agent Mode:</b> ${agentStatus}${goalLine}
 `;
     const keyboard = [
         [{ text: '📝 Generate Article', callback_data: 'generate_article' }],
+        [{ text: '🤖 Agent Mode', callback_data: 'goal_management' }],
         [{ text: '📊 Statistics', callback_data: 'stats' }],
         [{ text: '🗓 Schedule Management', callback_data: 'schedule_management' }],
         [{ text: '📺 Channel Management', callback_data: 'channel_management' }],
@@ -492,6 +537,67 @@ async function handleCallbackQuery(callbackQuery: any, env: Env, ctx: ExecutionC
         await onPreviewDiscard(chat_id, env, cbId);
     } else if (data.startsWith('youtube:')) {
         await handleYoutubeCallback(chat_id, data.substring('youtube:'.length), env);
+    } else if (data === 'goal_management') {
+        await handleGoalManagement(chat_id, env);
+    } else if (data === 'set_goal_start') {
+        await env.KV_B.put(`user_state_${chat_id}`, 'awaiting_goal');
+        await sendTelegramMessage(chat_id, '🎯 <b>Send me your goal</b>\n\nExample: <code>Grow to 1000 subscribers in 30 days</code>\n\nOr <b>/cancel</b> to stop.', env);
+    } else if (data === 'goal_pause') {
+        const goal = await getActiveGoal(String(chat_id), env);
+        if (goal) {
+            await pauseGoal(goal.id, env);
+            await sendTelegramMessage(chat_id, '⏸ <b>Goal paused.</b> Use <b>/goal resume</b> to continue.', env);
+        }
+        await handleGoalManagement(chat_id, env);
+    } else if (data === 'goal_resume') {
+        const goal = await getActiveGoal(String(chat_id), env);
+        if (goal) {
+            await resumeGoal(goal.id, env);
+            await sendTelegramMessage(chat_id, '▶️ <b>Goal resumed.</b>', env);
+        }
+        await handleGoalManagement(chat_id, env);
+    } else if (data === 'agent_approve_plan') {
+        const planData = await env.KV_B.get(`current_plan_${chat_id}`, 'json');
+        if (planData) {
+            await env.KV_B.put(`agent_mode_${chat_id}`, 'active');
+            await sendTelegramMessage(chat_id, '✅ <b>Plan approved! Agent mode activated.</b>\n\nThe bot will now execute the plan autonomously. You\'ll receive a report when the week ends.', env);
+        }
+        await sendDashboard(chat_id, env);
+    } else if (data === 'agent_pause') {
+        await env.KV_B.put(`agent_mode_${chat_id}`, 'inactive');
+        await sendTelegramMessage(chat_id, '⏸ <b>Agent mode paused.</b> Use <b>/agent on</b> to resume.', env);
+        await sendDashboard(chat_id, env);
+    } else if (data === 'agent_replan') {
+        const activeChannel = await env.KV_B.get(`active_channel_${chat_id}`);
+        if (activeChannel) {
+            await handleWeeklyReview(chat_id, activeChannel, env);
+        } else {
+            await sendTelegramMessage(chat_id, '⚠️ Set an active channel first via Channel Management.', env);
+        }
+    } else if (data === 'agent_weekly_report') {
+        const activeChannel = await env.KV_B.get(`active_channel_${chat_id}`);
+        if (activeChannel) {
+            await handleWeeklyReview(chat_id, activeChannel, env);
+        }
+    } else if (data === 'goal_confirm_yes') {
+        const pendingGoal = await env.KV_B.get(`pending_goal_${chat_id}`, 'json') as any;
+        if (pendingGoal) {
+            const activeChannel = await env.KV_B.get(`active_channel_${chat_id}`);
+            if (activeChannel) {
+                const goalId = await createGoal(activeChannel, pendingGoal.goalText, pendingGoal.targetSubs, pendingGoal.targetDays, env);
+                if (goalId) {
+                    await sendTelegramMessage(chat_id, `✅ <b>Goal set!</b>\n\n🎯 ${pendingGoal.goalText}\n📊 Target: ${pendingGoal.targetSubs} subscribers in ${pendingGoal.targetDays} days\n\nUse <b>/agent on</b> to activate autonomous mode.`, env);
+                }
+            }
+        }
+        await env.KV_B.delete(`pending_goal_${chat_id}`);
+        await env.KV_B.delete(`user_state_${chat_id}`);
+        await sendDashboard(chat_id, env);
+    } else if (data === 'goal_confirm_no') {
+        await env.KV_B.delete(`pending_goal_${chat_id}`);
+        await env.KV_B.delete(`user_state_${chat_id}`);
+        await sendTelegramMessage(chat_id, '🚫 Goal cancelled.', env);
+        await sendDashboard(chat_id, env);
     }
 }
 
@@ -676,6 +782,218 @@ async function handleSetActiveChannel(chat_id: number, env: Env) {
     }
 }
 
+async function handleGoalCommand(chat_id: number, args: string, env: Env) {
+    const subcommand = args.split(' ')[0];
+    const rest = args.substring(subcommand.length).trim();
+
+    if (subcommand === 'status' || subcommand === '') {
+        const activeChannel = await env.KV_B.get(`active_channel_${chat_id}`);
+        if (!activeChannel) {
+            await sendTelegramMessage(chat_id, '⚠️ Set an active channel first via <b>/addchannel</b>.', env);
+            return;
+        }
+        const progress = await getGoalProgress(activeChannel, env);
+        if (!progress.goal) {
+            await sendTelegramMessage(chat_id, '🎯 No active goal. Use <b>/goal &lt;text&gt;</b> to set one.\n\nExample: <code>/goal Grow to 1000 subscribers in 30 days</code>', env);
+            return;
+        }
+        const trackEmoji = progress.onTrack ? '✅' : '⚠️';
+        const barLength = 20;
+        const filled = Math.round((progress.percentComplete / 100) * barLength);
+        const bar = '█'.repeat(filled) + '░'.repeat(barLength - filled);
+
+        let msg = `<b>🎯 Goal Status</b>\n\n`;
+        msg += `<b>Goal:</b> ${progress.goal.goal_text}\n`;
+        msg += `<b>Progress:</b> <code>${bar}</code> ${progress.percentComplete}%\n`;
+        msg += `<b>Subscribers:</b> ${progress.currentSubs}/${progress.goal.target_subscribers}\n`;
+        msg += `<b>Time:</b> Day ${progress.daysElapsed}/${progress.goal.target_days}\n`;
+        msg += `<b>Status:</b> ${trackEmoji} ${progress.onTrack ? 'On track' : 'Behind schedule'}\n`;
+
+        const keyboard = [
+            [{ text: '⏸ Pause', callback_data: 'goal_pause' }, { text: '▶️ Resume', callback_data: 'goal_resume' }],
+            [{ text: '📊 Detailed Report', callback_data: 'agent_weekly_report' }],
+            [{ text: '⬅️ Back to Menu', callback_data: 'menu:dashboard' }]
+        ];
+        await sendInlineKeyboardMessage(chat_id, msg, keyboard, env);
+        return;
+    }
+
+    if (subcommand === 'pause') {
+        const activeChannel = await env.KV_B.get(`active_channel_${chat_id}`);
+        if (activeChannel) {
+            const goal = await getActiveGoal(activeChannel, env);
+            if (goal) {
+                await pauseGoal(goal.id, env);
+                await sendTelegramMessage(chat_id, '⏸ <b>Goal paused.</b>', env);
+                return;
+            }
+        }
+        await sendTelegramMessage(chat_id, 'No active goal to pause.', env);
+        return;
+    }
+
+    if (subcommand === 'resume') {
+        const activeChannel = await env.KV_B.get(`active_channel_${chat_id}`);
+        if (activeChannel) {
+            const goal = await getActiveGoal(activeChannel, env);
+            if (goal) {
+                await resumeGoal(goal.id, env);
+                await sendTelegramMessage(chat_id, '▶️ <b>Goal resumed.</b>', env);
+                return;
+            }
+        }
+        await sendTelegramMessage(chat_id, 'No paused goal to resume.', env);
+        return;
+    }
+
+    const goalText = args;
+    if (!goalText) {
+        await sendTelegramMessage(chat_id, '⚠️ Please provide a goal.\n\nExample: <code>/goal Grow to 1000 subscribers in 30 days</code>', env);
+        return;
+    }
+
+    const activeChannel = await env.KV_B.get(`active_channel_${chat_id}`);
+    if (!activeChannel) {
+        await sendTelegramMessage(chat_id, '⚠️ Set an active channel first via <b>/addchannel</b>.', env);
+        return;
+    }
+
+    const parsePrompt = `Parse this goal and extract the target subscriber count and number of days. Return ONLY JSON: {"target_subscribers": number, "target_days": number}
+
+Goal: "${goalText}"
+
+If no subscriber target is mentioned, default to 1000. If no days mentioned, default to 30.`;
+
+    const parseResult = await generateArticle(env.GROQ_API_KEY, parsePrompt, 'llama3-8b-8192');
+    let targetSubs = 1000;
+    let targetDays = 30;
+
+    if (parseResult.success) {
+        try {
+            const jsonMatch = parseResult.content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                targetSubs = parsed.target_subscribers || 1000;
+                targetDays = parsed.target_days || 30;
+            }
+        } catch (e) {}
+    }
+
+    await env.KV_B.put(`user_state_${chat_id}`, 'awaiting_goal_confirm');
+    await env.KV_B.put(`pending_goal_${chat_id}`, JSON.stringify({ goalText, targetSubs, targetDays }));
+
+    let msg = `<b>🎯 Confirm Goal</b>\n\n`;
+    msg += `<b>Goal:</b> ${goalText}\n`;
+    msg += `<b>Target:</b> ${targetSubs} subscribers\n`;
+    msg += `<b>Timeline:</b> ${targetDays} days\n`;
+    msg += `<b>Required pace:</b> ~${Math.ceil(targetSubs / targetDays)} subs/day\n\n`;
+    msg += `Is this correct?`;
+
+    const keyboard = [
+        [{ text: '✅ Yes, set goal', callback_data: 'goal_confirm_yes' }],
+        [{ text: '❌ Cancel', callback_data: 'goal_confirm_no' }]
+    ];
+    await sendInlineKeyboardMessage(chat_id, msg, keyboard, env);
+}
+
+async function handleGoalManagement(chat_id: number, env: Env) {
+    const activeChannel = await env.KV_B.get(`active_channel_${chat_id}`);
+    const agentMode = await env.KV_B.get(`agent_mode_${chat_id}`);
+
+    let msg = `<b>🤖 Agent Mode</b>\n\n`;
+    msg += `<b>Status:</b> ${agentMode === 'active' ? '🟢 Active' : '⚪ Inactive'}\n\n`;
+
+    if (activeChannel) {
+        const progress = await getGoalProgress(activeChannel, env);
+        if (progress.goal) {
+            const barLength = 15;
+            const filled = Math.round((progress.percentComplete / 100) * barLength);
+            const bar = '█'.repeat(filled) + '░'.repeat(barLength - filled);
+
+            msg += `<b>Current Goal:</b> ${progress.goal.goal_text}\n`;
+            msg += `<code>${bar}</code> ${progress.percentComplete}%\n`;
+            msg += `👥 ${progress.currentSubs}/${progress.goal.target_subscribers} subs\n`;
+            msg += `⏱ Day ${progress.daysElapsed}/${progress.goal.target_days}\n\n`;
+        } else {
+            msg += '<i>No active goal set.</i>\n\n';
+        }
+    } else {
+        msg += '<i>Set an active channel first to use agent mode.</i>\n\n';
+    }
+
+    const keyboard = [];
+    if (!activeChannel) {
+        keyboard.push([{ text: '📺 Set Active Channel', callback_data: 'channel_management' }]);
+    } else {
+        const goal = await getActiveGoal(activeChannel, env);
+        if (!goal) {
+            keyboard.push([{ text: '🎯 Set Goal', callback_data: 'set_goal_start' }]);
+        } else {
+            keyboard.push([{ text: '📊 View Goal Details', callback_data: 'goal_management' }]);
+            keyboard.push([
+                { text: agentMode === 'active' ? '⏸ Pause Agent' : '▶️ Start Agent', callback_data: agentMode === 'active' ? 'agent_pause' : 'agent_approve_plan' }
+            ]);
+        }
+        keyboard.push([{ text: '📋 Weekly Report', callback_data: 'agent_weekly_report' }]);
+    }
+    keyboard.push([{ text: '⬅️ Back to Menu', callback_data: 'menu:dashboard' }]);
+
+    await sendInlineKeyboardMessage(chat_id, msg, keyboard, env);
+}
+
+async function handlePlanCommand(chat_id: number, env: Env) {
+    const planData = await env.KV_B.get(`current_plan_${chat_id}`, 'json');
+    if (!planData) {
+        await sendTelegramMessage(chat_id, '📋 No weekly plan yet. Set a goal and the bot will create one automatically.\n\nUse <b>/goal &lt;text&gt;</b> to get started.', env);
+        return;
+    }
+    const msg = formatWeeklyPlan(planData);
+    const keyboard = [
+        [{ text: '🔄 Generate New Plan', callback_data: 'agent_replan' }],
+        [{ text: '⬅️ Back to Menu', callback_data: 'menu:dashboard' }]
+    ];
+    await sendInlineKeyboardMessage(chat_id, msg, keyboard, env);
+}
+
+async function handleReportCommand(chat_id: number, env: Env) {
+    const activeChannel = await env.KV_B.get(`active_channel_${chat_id}`);
+    if (!activeChannel) {
+        await sendTelegramMessage(chat_id, '⚠️ Set an active channel first via <b>/addchannel</b>.', env);
+        return;
+    }
+    await handleWeeklyReview(chat_id, activeChannel, env);
+}
+
+async function handleAgentCommand(chat_id: number, args: string, env: Env) {
+    const subcommand = args.trim().toLowerCase();
+
+    if (subcommand === 'on') {
+        const activeChannel = await env.KV_B.get(`active_channel_${chat_id}`);
+        if (!activeChannel) {
+            await sendTelegramMessage(chat_id, '⚠️ Set an active channel first via <b>/addchannel</b>.', env);
+            return;
+        }
+        const goal = await getActiveGoal(activeChannel, env);
+        if (!goal) {
+            await sendTelegramMessage(chat_id, '⚠️ Set a goal first via <b>/goal &lt;text&gt;</b>.', env);
+            return;
+        }
+        await env.KV_B.put(`agent_mode_${chat_id}`, 'active');
+        await sendTelegramMessage(chat_id, '🟢 <b>Agent mode activated!</b>\n\nThe bot will now:\n• Generate and post content according to the plan\n• Track engagement and growth\n• Adjust strategy weekly\n• Send you reports', env);
+        await sendDashboard(chat_id, env);
+        return;
+    }
+
+    if (subcommand === 'off') {
+        await env.KV_B.put(`agent_mode_${chat_id}`, 'inactive');
+        await sendTelegramMessage(chat_id, '⚪ <b>Agent mode deactivated.</b>', env);
+        await sendDashboard(chat_id, env);
+        return;
+    }
+
+    await sendTelegramMessage(chat_id, 'Usage: <b>/agent on</b> or <b>/agent off</b>', env);
+}
+
 async function recordStat(chat_id: number | string, env: Env) {
     const date = new Date().toISOString().slice(0, 10);
     const target = String(chat_id);
@@ -695,4 +1013,12 @@ async function recordStat(chat_id: number | string, env: Env) {
     const totalKey = `stat_total_${target}`;
     await env.KV_B.put(todayKey, String((Number(await env.KV_B.get(todayKey)) || 0) + 1));
     await env.KV_B.put(totalKey, String((Number(await env.KV_B.get(totalKey)) || 0) + 1));
+}
+
+export async function recordStatWithMetric(chat_id: number | string, messageId: number, topic: string, contentType: string, env: Env) {
+    await recordStat(chat_id, env);
+
+    const target = String(chat_id);
+    const memberCount = await getChatMemberCount(target, env);
+    await recordPostMetric(target, messageId, topic, contentType, memberCount, env);
 }

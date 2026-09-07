@@ -22,10 +22,10 @@ id = "59ff4573092e4901b72f53d96d999aef"
 # 3. Apply schema: npx wrangler d1 execute creatorbot_stats --remote --file=./schema.sql
 # If you skip D1, the bot falls back to lightweight KV counters automatically.
 # =========================================================
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "creatorbot_stats"
-# database_id = "<YOUR_DATABASE_ID>"
+[[d1_databases]]
+binding = "DB"
+database_name = "creatorbot_stats"
+database_id = "YOUR_DATABASE_ID_HERE"
 
 # Note: The BOT_TOKEN and GROQ_API_KEY must be set as Secrets in the Cloudflare dashboard.
 #   npx wrangler secret put BOT_TOKEN

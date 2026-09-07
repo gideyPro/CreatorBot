@@ -190,6 +190,10 @@ export async function setMyCommands(env: Env): Promise<boolean> {
         { command: 'settings', description: 'Open settings' },
         { command: 'addchannel', description: 'Add a channel' },
         { command: 'youtube', description: 'Generate & upload YouTube videos' },
+        { command: 'goal', description: 'Set a growth goal' },
+        { command: 'plan', description: 'View weekly plan' },
+        { command: 'report', description: 'Get performance report' },
+        { command: 'agent', description: 'Toggle autonomous mode' },
         { command: 'cancel', description: 'Cancel current action' },
         { command: 'help', description: 'Show help' },
     ];

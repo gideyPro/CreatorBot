@@ -1,11 +1,17 @@
 import Groq from 'groq-sdk';
 
-export async function generateArticle(apiKey: string, prompt: string, model: string = 'llama3-8b-8192'): Promise<{ success: boolean, content: string }> {
+export async function generateArticle(apiKey: string, prompt: string, model: string = 'llama3-8b-8192', systemPrompt?: string): Promise<{ success: boolean, content: string }> {
     const groq = new Groq({ apiKey });
 
     try {
+        const messages: any[] = [];
+        if (systemPrompt) {
+            messages.push({ role: 'system', content: systemPrompt });
+        }
+        messages.push({ role: 'user', content: prompt });
+
         const chatCompletion = await groq.chat.completions.create({
-            messages: [{ role: 'user', content: prompt }],
+            messages,
             model: model,
         });
 
